@@ -18,15 +18,16 @@
   - **Push/Pull/Sync** in background.
   - Manage collaborators directly from the terminal.
 
-## Installation
+### macOS (via Homebrew)
 
-### From Source (Rust/Cargo)
+You can install `zit` easily using our official Homebrew tap:
 
 ```bash
-cargo install --path .
+brew tap JUSTMEETPATEL/zit
+brew install zit
 ```
 
-*Note: Homebrew support will be available soon once the formula is added to the official core or a custom tap.*
+*Note: This installs the stable release.*
 
 ## Usage
 
