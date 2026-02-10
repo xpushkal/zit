@@ -44,4 +44,9 @@ impl RemoteOps {
     pub fn fetch(remote: &str) -> Result<String> {
         run_git(&["fetch", remote])
     }
+
+    /// Pull from a remote with rebase.
+    pub fn pull(remote: &str, branch: &str) -> Result<String> {
+        run_git(&["pull", "--rebase", "--allow-unrelated-histories", remote, branch])
+    }
 }

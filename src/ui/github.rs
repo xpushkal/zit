@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
+use std::sync::{Arc, Mutex};
 
 use crate::git;
 
@@ -42,6 +43,8 @@ pub struct GitHubState {
     pub collab_selected: usize,
     pub collab_list_state: ListState,
     pub collab_error: Option<String>,
+    // Background operation result
+    pub bg_result: Arc<Mutex<Option<String>>>,
     // Status
     pub status: Option<String>,
 }
@@ -63,6 +66,7 @@ impl GitHubState {
             collab_selected: 0,
             collab_list_state: ListState::default(),
             collab_error: None,
+            bg_result: Arc::new(Mutex::new(None)),
             status: None,
         }
     }
@@ -132,6 +136,14 @@ fn render_menu(f: &mut Frame, area: Rect, state: &mut GitHubState, has_token: bo
         ListItem::new(Line::from(vec![
             Span::styled("  📤  ", Style::default()),
             Span::styled("Push to Remote", Style::default().fg(Color::White)),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled("  📥  ", Style::default()),
+            Span::styled("Pull from Remote", Style::default().fg(Color::White)),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled("  🔄  ", Style::default()),
+            Span::styled("Sync (Pull + Push)", Style::default().fg(Color::White)),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("  👥  ", Style::default()),
@@ -422,7 +434,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.github_state.menu_selected < 4 {
+            if app.github_state.menu_selected < 6 {
                 app.github_state.menu_selected += 1;
                 let sel = app.github_state.menu_selected;
                 app.github_state.menu_state.select(Some(sel));
@@ -448,15 +460,63 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.github_state.editing_field = true;
                 }
                 2 => {
-                    // Push
+                    // Push — run in background thread
                     if let Ok(branch) = git::BranchOps::current() {
-                        match git::RemoteOps::push("origin", &branch, true) {
-                            Ok(_) => app.github_state.status = Some(format!("✓ Pushed to origin/{}", branch)),
-                            Err(e) => app.github_state.status = Some(format!("Push failed: {}", e)),
-                        }
+                        app.github_state.status = Some("⏳ Pushing...".to_string());
+                        let bg = app.github_state.bg_result.clone();
+                        let br = branch.clone();
+                        std::thread::spawn(move || {
+                            let result = match git::RemoteOps::push("origin", &br, true) {
+                                Ok(_) => format!("✓ Pushed to origin/{}", br),
+                                Err(e) => format!("Push failed: {}", e),
+                            };
+                            if let Ok(mut r) = bg.lock() {
+                                *r = Some(result);
+                            }
+                        });
                     }
                 }
                 3 => {
+                    // Pull — run in background thread
+                    if let Ok(branch) = git::BranchOps::current() {
+                        app.github_state.status = Some("⏳ Pulling...".to_string());
+                        let bg = app.github_state.bg_result.clone();
+                        let br = branch.clone();
+                        std::thread::spawn(move || {
+                            let result = match git::RemoteOps::pull("origin", &br) {
+                                Ok(_) => format!("✓ Pulled from origin/{}", br),
+                                Err(e) => format!("Pull failed: {}", e),
+                            };
+                            if let Ok(mut r) = bg.lock() {
+                                *r = Some(result);
+                            }
+                        });
+                    }
+                }
+                4 => {
+                    // Sync — pull then push in background
+                    if let Ok(branch) = git::BranchOps::current() {
+                        app.github_state.status = Some("⏳ Syncing (pull + push)...".to_string());
+                        let bg = app.github_state.bg_result.clone();
+                        let br = branch.clone();
+                        std::thread::spawn(move || {
+                            let pull = git::RemoteOps::pull("origin", &br);
+                            let result = match pull {
+                                Ok(_) => {
+                                    match git::RemoteOps::push("origin", &br, true) {
+                                        Ok(_) => format!("✓ Synced with origin/{}", br),
+                                        Err(e) => format!("Push failed after pull: {}", e),
+                                    }
+                                }
+                                Err(e) => format!("Pull failed: {}", e),
+                            };
+                            if let Ok(mut r) = bg.lock() {
+                                *r = Some(result);
+                            }
+                        });
+                    }
+                }
+                5 => {
                     // Collaborators — load and switch view
                     if app.config.github.get_token().is_none() {
                         app.github_state.status = Some("Login first to manage collaborators".to_string());
@@ -465,7 +525,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     load_collaborators(app);
                     app.github_state.view = GitHubView::Collaborators;
                 }
-                4 => {
+                6 => {
                     // Logout
                     if app.config.github.get_token().is_some() {
                         app.config.github.oauth_token = None;
@@ -518,6 +578,13 @@ fn handle_device_auth_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::R
 
 /// Called on every tick event to poll GitHub for authorization status.
 pub fn tick_device_auth(app: &mut crate::app::App) {
+    // Check for background operation results (push/pull/sync)
+    if let Ok(mut result) = app.github_state.bg_result.try_lock() {
+        if let Some(msg) = result.take() {
+            app.github_state.status = Some(msg);
+        }
+    }
+
     let (device_code, _interval) = {
         if let GitHubView::DeviceAuth(ref mut auth) = app.github_state.view {
             auth.ticks_since_poll += 1;
