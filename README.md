@@ -29,6 +29,19 @@ brew install zit
 
 *Note: This installs the stable release.*
 
+### Linux & Windows
+
+Currently, the best way to install `zit` on Linux and Windows is via Cargo (Rust's package manager).
+
+```bash
+cargo install --git https://github.com/JUSTMEETPATEL/zit
+```
+
+*Prerequisites:*
+- **Rust/Cargo**: Install via [rustup.rs](https://rustup.rs).
+- **Git**: Ensure `git` is installed and in your PATH.
+- **Terminal**: Use a modern terminal with TrueColor support (e.g., Windows Terminal, Alacritty, GNOME Terminal).
+
 ## Usage
 
 Run `zit` in any git repository:
