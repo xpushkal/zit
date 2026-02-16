@@ -16,3 +16,11 @@ debug/
 
 # Environment
 .env
+.env.*
+**/venv/
+**/__pycache__/
+*.pyc
+
+# AWS SAM
+.aws-sam/
+samconfig.toml

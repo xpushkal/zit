@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Zit AI Mentor Backend - AI-powered Git assistant
+
+Globals:
+  Function:
+    Timeout: 60
+    MemorySize: 512
+    Runtime: python3.11
+    Tracing: Active
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+  BedrockModelId:
+    Type: String
+    Default: anthropic.claude-3-sonnet-20240229-v1:0
+
+Resources:
+  ZitAIMentorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub zit-ai-mentor-${Environment}
+      CodeUri: ../lambda/
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          ENVIRONMENT: !Ref Environment
+          LOG_LEVEL: INFO
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: '*'
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /mentor
+            Method: POST
+            RestApiId: !Ref ZitApi
+        HealthCheck:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: GET
+            RestApiId: !Ref ZitApi
+
+  ZitApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub zit-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,Authorization,x-api-key'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: SHARED
+          UsagePlanName: !Sub zit-usage-plan-${Environment}
+          Description: Usage plan for Zit AI Mentor API
+          Quota:
+            Limit: 5000
+            Period: MONTH
+          Throttle:
+            BurstLimit: 20
+            RateLimit: 10
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${ZitApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/mentor
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndpoint
+  
+  HealthEndpoint:
+    Description: Health check endpoint
+    Value: !Sub https://${ZitApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}/health
+  
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt ZitAIMentorFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-FunctionArn
+  
+  FunctionName:
+    Description: Lambda Function Name
+    Value: !Ref ZitAIMentorFunction
