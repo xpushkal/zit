@@ -104,5 +104,5 @@ Outputs:
     Value: !Ref ZitAIMentorFunction
 
   ApiKeyId:
-    Description: API Key ID (retrieve value from AWS Console or CLI)
-    Value: !Ref ZitApi
+    Description: Retrieve your API key with this CLI command
+    Value: !Sub 'aws apigateway get-api-keys --name-query zit-usage-plan-${Environment} --include-values --query items[0].value --output text --region ${AWS::Region}'

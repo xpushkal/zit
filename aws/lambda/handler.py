@@ -23,6 +23,7 @@ def get_bedrock_client():
 
 MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
 MAX_DIFF_LENGTH = 4000  # Limit diff content to avoid token explosion
+MAX_REQUEST_BODY_SIZE = 128_000  # 128KB max request body
 VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn']
 
 
@@ -87,11 +88,17 @@ def lambda_handler(event, context):
         if http_method == 'OPTIONS':
             return build_response(200, True, {'message': 'OK'})
         
+        # Check request body size
+        raw_body = event.get('body', '')
+        if isinstance(raw_body, str) and len(raw_body) > MAX_REQUEST_BODY_SIZE:
+            logger.warning(f"Request body too large: {len(raw_body)} bytes")
+            return build_response(413, False, error=f"Request body too large (max {MAX_REQUEST_BODY_SIZE // 1024}KB)")
+
         # Parse request body
-        if isinstance(event.get('body'), str):
-            body = json.loads(event['body'])
+        if isinstance(raw_body, str):
+            body = json.loads(raw_body)
         else:
-            body = event.get('body', event)
+            body = raw_body if raw_body else event
         
         logger.info(f"Request type: {body.get('type', 'explain')}")
         

@@ -104,6 +104,22 @@ impl Default for AiConfig {
     }
 }
 
+impl AiConfig {
+    /// Resolve API key: config file first, then ZIT_AI_API_KEY env var.
+    pub fn resolved_api_key(&self) -> Option<String> {
+        self.api_key
+            .clone()
+            .or_else(|| std::env::var("ZIT_AI_API_KEY").ok())
+    }
+
+    /// Resolve endpoint: config file first, then ZIT_AI_ENDPOINT env var.
+    pub fn resolved_endpoint(&self) -> Option<String> {
+        self.endpoint
+            .clone()
+            .or_else(|| std::env::var("ZIT_AI_ENDPOINT").ok())
+    }
+}
+
 impl Config {
     /// Get the config file path (~/.config/zit/config.toml).
     pub fn path() -> PathBuf {

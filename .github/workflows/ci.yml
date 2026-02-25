@@ -69,3 +69,20 @@ jobs:
           path: |
             target/release/zit
             target/release/zit.exe
+
+  lambda-test:
+    name: Lambda Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          cd aws
+          pip install -r lambda/requirements.txt pytest
+      - name: Run Lambda tests
+        run: |
+          cd aws
+          python -m pytest tests/ -v

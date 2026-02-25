@@ -43,7 +43,7 @@ impl CommitState {
         self.validate();
     }
 
-    fn validate(&mut self) {
+    pub fn validate(&mut self) {
         self.validation_warnings.clear();
 
         if self.message.is_empty() {
@@ -233,21 +233,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             .modifiers
             .contains(crossterm::event::KeyModifiers::CONTROL)
     {
-        if let Some(ref client) = app.ai_client {
-            let result = client.suggest_commit_message();
-            match result {
-                Ok(suggestion) => {
-                    app.commit_state.message = suggestion.trim().to_string();
-                    app.commit_state.validate();
-                    app.set_status("✓ AI suggestion loaded — edit or press Enter to commit");
-                }
-                Err(e) => {
-                    app.set_status(format!("AI error: {}", e));
-                }
-            }
-        } else {
-            app.set_status("AI not configured. Set [ai] in ~/.config/zit/config.toml");
-        }
+        app.start_ai_suggest();
         return Ok(());
     }
 

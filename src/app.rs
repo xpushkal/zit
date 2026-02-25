@@ -1,10 +1,13 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use std::sync::mpsc;
 
 use crate::ai::client::AiClient;
 use crate::config::Config;
 use crate::git;
-use crate::ui::{branches, commit, dashboard, github, reflog, staging, time_travel, timeline};
+use crate::ui::{
+    ai_mentor, branches, commit, dashboard, github, reflog, staging, time_travel, timeline,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum View {
@@ -16,6 +19,7 @@ pub enum View {
     TimeTravel,
     Reflog,
     GitHub,
+    AiMentor,
 }
 
 /// Popup dialog state.
@@ -61,6 +65,16 @@ pub enum InputAction {
     AddCollaborator,
 }
 
+/// Describes which AI action is in flight.
+#[derive(Debug, Clone)]
+pub enum AiAction {
+    CommitSuggest,
+    ExplainRepo,
+    ExplainError(String),
+    Recommend,
+    HealthCheck,
+}
+
 pub struct App {
     pub running: bool,
     pub view: View,
@@ -68,6 +82,9 @@ pub struct App {
     pub config: Config,
     pub status_message: Option<String>,
     pub ai_client: Option<AiClient>,
+    pub ai_loading: bool,
+    ai_receiver: Option<mpsc::Receiver<Result<String, String>>>,
+    ai_action: Option<AiAction>,
 
     // View states
     pub dashboard_state: dashboard::DashboardState,
@@ -78,6 +95,7 @@ pub struct App {
     pub time_travel_state: time_travel::TimeTravelState,
     pub reflog_state: reflog::ReflogState,
     pub github_state: github::GitHubState,
+    pub ai_mentor_state: ai_mentor::AiMentorState,
 }
 
 impl App {
@@ -90,6 +108,9 @@ impl App {
             config,
             status_message: None,
             ai_client,
+            ai_loading: false,
+            ai_receiver: None,
+            ai_action: None,
             dashboard_state: dashboard::DashboardState::default(),
             staging_state: staging::StagingState::default(),
             commit_state: commit::CommitState::default(),
@@ -98,6 +119,7 @@ impl App {
             time_travel_state: time_travel::TimeTravelState::default(),
             reflog_state: reflog::ReflogState::default(),
             github_state: github::GitHubState::new(),
+            ai_mentor_state: ai_mentor::AiMentorState::default(),
         }
     }
 
@@ -112,7 +134,8 @@ impl App {
             View::Timeline => self.timeline_state.refresh(),
             View::TimeTravel => self.time_travel_state.refresh(),
             View::Reflog => self.reflog_state.refresh(),
-            View::GitHub => {} // no auto-refresh for GitHub
+            View::GitHub => {}   // no auto-refresh for GitHub
+            View::AiMentor => {} // no auto-refresh
         }
     }
 
@@ -243,6 +266,10 @@ impl App {
                     self.view = View::GitHub;
                     return Ok(());
                 }
+                KeyCode::Char('a') => {
+                    self.view = View::AiMentor;
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -257,6 +284,7 @@ impl App {
             View::TimeTravel => time_travel::handle_key(self, key)?,
             View::Reflog => reflog::handle_key(self, key)?,
             View::GitHub => github::handle_key(self, key)?,
+            View::AiMentor => ai_mentor::handle_key(self, key)?,
         }
 
         Ok(())
@@ -267,7 +295,11 @@ impl App {
             ConfirmAction::DeleteBranch(name) => {
                 match git::BranchOps::delete(&name, false) {
                     Ok(()) => self.status_message = Some(format!("Deleted branch '{}'", name)),
-                    Err(e) => self.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.status_message = Some(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
                 }
                 self.branches_state.refresh();
             }
@@ -277,7 +309,11 @@ impl App {
                         self.status_message =
                             Some(format!("Hard reset to {}", &hash[..7.min(hash.len())]))
                     }
-                    Err(e) => self.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.status_message = Some(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
                 }
                 self.time_travel_state.refresh();
             }
@@ -287,7 +323,11 @@ impl App {
                         self.status_message =
                             Some(format!("Mixed reset to {}", &hash[..7.min(hash.len())]))
                     }
-                    Err(e) => self.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.status_message = Some(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
                 }
                 self.time_travel_state.refresh();
             }
@@ -297,7 +337,11 @@ impl App {
                         self.status_message =
                             Some(format!("Soft reset to {}", &hash[..7.min(hash.len())]))
                     }
-                    Err(e) => self.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.status_message = Some(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
                 }
                 self.time_travel_state.refresh();
             }
@@ -392,6 +436,161 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    /// Start an async AI commit message suggestion (non-blocking).
+    pub fn start_ai_suggest(&mut self) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already generating...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured. Set [ai] in ~/.config/zit/config.toml or export ZIT_AI_API_KEY + ZIT_AI_ENDPOINT");
+                return;
+            }
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::CommitSuggest);
+        self.set_status("⏳ Generating AI commit message...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client.suggest_commit_message().map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Start an async AI query (explain_repo, recommend, health_check) — non-blocking.
+    pub fn start_ai_query(&mut self, action_type: String, query: Option<String>) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already generating...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured. Set [ai] in ~/.config/zit/config.toml or export ZIT_AI_API_KEY + ZIT_AI_ENDPOINT");
+                return;
+            }
+        };
+
+        let action = match action_type.as_str() {
+            "explain_repo" => AiAction::ExplainRepo,
+            "recommend" => AiAction::Recommend,
+            "health_check" => AiAction::HealthCheck,
+            _ => AiAction::ExplainRepo,
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(action.clone());
+        self.set_status("⏳ Asking AI mentor...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+        let query_clone = query;
+
+        std::thread::spawn(move || {
+            let result = match action {
+                AiAction::ExplainRepo => client
+                    .explain_repo(query_clone.as_deref())
+                    .map_err(|e| e.to_string()),
+                AiAction::Recommend => {
+                    let q = query_clone.unwrap_or_else(|| "What should I do next?".to_string());
+                    client.recommend(&q).map_err(|e| e.to_string())
+                }
+                AiAction::HealthCheck => client.health_check().map_err(|e| e.to_string()),
+                _ => Err("Unknown action".to_string()),
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Start an async AI error explanation — non-blocking.
+    pub fn start_ai_error_explain(&mut self, error_msg: String) {
+        if self.ai_loading {
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => return,
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::ExplainError(error_msg.clone()));
+        self.set_status("⏳ AI is analyzing the error...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client.explain_error(&error_msg).map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Poll for an AI result (non-blocking). Call on every tick/key event.
+    pub fn poll_ai_result(&mut self) {
+        if let Some(ref rx) = self.ai_receiver {
+            match rx.try_recv() {
+                Ok(Ok(response)) => {
+                    let action = self.ai_action.take();
+                    self.ai_loading = false;
+                    self.ai_receiver = None;
+
+                    match action {
+                        Some(AiAction::CommitSuggest) => {
+                            self.commit_state.message = response.trim().to_string();
+                            self.commit_state.validate();
+                            self.set_status(
+                                "✓ AI suggestion loaded — edit or press Enter to commit",
+                            );
+                        }
+                        Some(AiAction::ExplainError(original_err)) => {
+                            let msg = format!(
+                                "Error: {}\n\n── AI Explanation ──\n\n{}",
+                                original_err, response
+                            );
+                            self.popup = Popup::Message {
+                                title: "🤖 AI Error Explanation".to_string(),
+                                message: msg,
+                            };
+                            self.set_status("✓ AI explanation ready");
+                        }
+                        Some(AiAction::ExplainRepo)
+                        | Some(AiAction::Recommend)
+                        | Some(AiAction::HealthCheck) => {
+                            self.ai_mentor_state.result_text = response;
+                            self.ai_mentor_state.result_scroll = 0;
+                            self.ai_mentor_state.mode = ai_mentor::AiMode::Result;
+                            self.set_status("✓ AI response ready");
+                        }
+                        None => {
+                            self.set_status(format!("AI: {}", response));
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    self.set_status(format!("AI error: {}", e));
+                    self.ai_loading = false;
+                    self.ai_receiver = None;
+                    self.ai_action = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Still waiting — nothing to do
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.set_status("AI request was interrupted");
+                    self.ai_loading = false;
+                    self.ai_receiver = None;
+                    self.ai_action = None;
+                }
+            }
+        }
     }
 
     /// Set a status message that appears at the bottom.

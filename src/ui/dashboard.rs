@@ -262,6 +262,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
         Span::raw(" Reflog "),
         Span::styled("[g]", Style::default().fg(Color::Cyan)),
         Span::raw(" GitHub "),
+        Span::styled("[a]", Style::default().fg(Color::Magenta)),
+        Span::raw(" AI Mentor "),
         Span::styled("[?]", Style::default().fg(Color::Cyan)),
         Span::raw(" Help "),
         Span::styled("[q]", Style::default().fg(Color::Red)),
