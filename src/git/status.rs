@@ -1,7 +1,8 @@
-use anyhow::Result;
 use super::runner::run_git;
+use anyhow::Result;
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum FileStatus {
     Modified,
     Added,
@@ -17,6 +18,7 @@ pub enum FileStatus {
 pub struct FileEntry {
     pub status: FileStatus,
     pub path: String,
+    #[allow(dead_code)]
     pub original_path: Option<String>, // For renames
 }
 
@@ -57,7 +59,10 @@ pub fn get_status() -> Result<RepoStatus> {
 
     for line in output.lines() {
         if line.starts_with("# branch.head ") {
-            branch = line.strip_prefix("# branch.head ").unwrap_or("(unknown)").to_string();
+            branch = line
+                .strip_prefix("# branch.head ")
+                .unwrap_or("(unknown)")
+                .to_string();
         } else if line.starts_with("# branch.upstream ") {
             upstream = Some(
                 line.strip_prefix("# branch.upstream ")
@@ -68,14 +73,8 @@ pub fn get_status() -> Result<RepoStatus> {
             // Format: # branch.ab +N -M
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
-                ahead = parts[2]
-                    .trim_start_matches('+')
-                    .parse()
-                    .unwrap_or(0);
-                behind = parts[3]
-                    .trim_start_matches('-')
-                    .parse()
-                    .unwrap_or(0);
+                ahead = parts[2].trim_start_matches('+').parse().unwrap_or(0);
+                behind = parts[3].trim_start_matches('-').parse().unwrap_or(0);
             }
         } else if line.starts_with("1 ") {
             // Ordinary changed entry: 1 XY sub mH mI mW hH hI path
@@ -165,11 +164,7 @@ fn parse_ordinary_entry(
     }
 }
 
-fn parse_rename_entry(
-    line: &str,
-    staged: &mut Vec<FileEntry>,
-    unstaged: &mut Vec<FileEntry>,
-) {
+fn parse_rename_entry(line: &str, staged: &mut Vec<FileEntry>, unstaged: &mut Vec<FileEntry>) {
     // Format: 2 XY sub mH mI mW hH hI Xscore path\torigPath
     let parts: Vec<&str> = line.splitn(10, ' ').collect();
     if parts.len() < 10 {

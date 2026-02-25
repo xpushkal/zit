@@ -9,6 +9,7 @@ use ratatui::{
 
 use crate::git;
 
+#[derive(Default)]
 pub struct TimelineState {
     pub commits: Vec<git::CommitEntry>,
     pub selected: usize,
@@ -21,22 +22,6 @@ pub struct TimelineState {
     pub show_detail: bool,
 }
 
-impl Default for TimelineState {
-    fn default() -> Self {
-        Self {
-            commits: Vec::new(),
-            selected: 0,
-            list_state: ListState::default(),
-            detail_commit: None,
-            detail_diff: Vec::new(),
-            detail_scroll: 0,
-            search_query: String::new(),
-            page: 0,
-            show_detail: false,
-        }
-    }
-}
-
 impl TimelineState {
     pub fn refresh(&mut self) {
         let count = 100;
@@ -47,7 +32,11 @@ impl TimelineState {
                 if self.selected >= self.commits.len() && !self.commits.is_empty() {
                     self.selected = self.commits.len() - 1;
                 }
-                self.list_state.select(if self.commits.is_empty() { None } else { Some(self.selected) });
+                self.list_state.select(if self.commits.is_empty() {
+                    None
+                } else {
+                    Some(self.selected)
+                });
             }
             Err(_) => {
                 self.commits = Vec::new();
@@ -60,13 +49,14 @@ impl TimelineState {
             self.refresh();
             return;
         }
-        match git::log::search_commits(&self.search_query, 100) {
-            Ok(commits) => {
-                self.commits = commits;
-                self.selected = 0;
-                self.list_state.select(if self.commits.is_empty() { None } else { Some(0) });
-            }
-            Err(_) => {}
+        if let Ok(commits) = git::log::search_commits(&self.search_query, 100) {
+            self.commits = commits;
+            self.selected = 0;
+            self.list_state.select(if self.commits.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
         }
     }
 
@@ -125,7 +115,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimelineState) {
             } else {
                 Span::styled(
                     format!("({}) ", c.refs),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
                 )
             };
 
@@ -145,17 +137,30 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimelineState) {
     let title = if state.search_query.is_empty() {
         format!(" Commit Timeline (page {}) ", state.page + 1)
     } else {
-        format!(" Search: '{}' ({} results) ", state.search_query, state.commits.len())
+        format!(
+            " Search: '{}' ({} results) ",
+            state.search_query,
+            state.commits.len()
+        )
     };
 
     let list = List::new(items)
         .block(
             Block::default()
-                .title(Span::styled(title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+                .title(Span::styled(
+                    title,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("▶ ");
 
     f.render_stateful_widget(list, area, &mut state.list_state);
@@ -165,7 +170,7 @@ fn render_detail(f: &mut Frame, area: Rect, state: &TimelineState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // Commit info
+            Constraint::Length(6), // Commit info
             Constraint::Min(10),   // Diff
         ])
         .split(area);
@@ -186,12 +191,20 @@ fn render_detail(f: &mut Frame, area: Rect, state: &TimelineState) {
             ]),
             Line::from(vec![
                 Span::styled("  Message: ", Style::default().fg(Color::DarkGray)),
-                Span::styled(&commit.message, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &commit.message,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
             ]),
         ])
         .block(
             Block::default()
-                .title(Span::styled(" Commit Details ", Style::default().fg(Color::White)))
+                .title(Span::styled(
+                    " Commit Details ",
+                    Style::default().fg(Color::White),
+                ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         );
@@ -232,16 +245,20 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 app.timeline_state.show_detail = false;
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                app.timeline_state.detail_scroll = app.timeline_state.detail_scroll.saturating_add(1);
+                app.timeline_state.detail_scroll =
+                    app.timeline_state.detail_scroll.saturating_add(1);
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                app.timeline_state.detail_scroll = app.timeline_state.detail_scroll.saturating_sub(1);
+                app.timeline_state.detail_scroll =
+                    app.timeline_state.detail_scroll.saturating_sub(1);
             }
             KeyCode::PageDown => {
-                app.timeline_state.detail_scroll = app.timeline_state.detail_scroll.saturating_add(20);
+                app.timeline_state.detail_scroll =
+                    app.timeline_state.detail_scroll.saturating_add(20);
             }
             KeyCode::PageUp => {
-                app.timeline_state.detail_scroll = app.timeline_state.detail_scroll.saturating_sub(20);
+                app.timeline_state.detail_scroll =
+                    app.timeline_state.detail_scroll.saturating_sub(20);
             }
             _ => {}
         }
@@ -265,10 +282,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
         }
         KeyCode::Enter => {
             if let Some(commit) = app.timeline_state.commits.get(app.timeline_state.selected) {
-                 if !commit.hash.is_empty() {
+                if !commit.hash.is_empty() {
                     app.timeline_state.load_detail();
                     app.timeline_state.show_detail = true;
-                 }
+                }
             }
         }
         KeyCode::Char('/') => {

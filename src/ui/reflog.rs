@@ -3,12 +3,13 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Table, TableState, Paragraph, Wrap},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
 use crate::git;
 
+#[derive(Default)]
 pub struct ReflogState {
     pub entries: Vec<git::ReflogEntry>,
     pub selected: usize,
@@ -17,20 +18,6 @@ pub struct ReflogState {
     pub show_diff: bool,
     pub detail_diff: Vec<git::DiffLine>,
     pub detail_scroll: u16,
-}
-
-impl Default for ReflogState {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-            selected: 0,
-            table_state: TableState::default(),
-            filter_op: None,
-            show_diff: false,
-            detail_diff: Vec::new(),
-            detail_scroll: 0,
-        }
-    }
 }
 
 impl ReflogState {
@@ -45,7 +32,11 @@ impl ReflogState {
                 if self.selected >= self.entries.len() && !self.entries.is_empty() {
                     self.selected = self.entries.len() - 1;
                 }
-                self.table_state.select(if self.entries.is_empty() { None } else { Some(self.selected) });
+                self.table_state.select(if self.entries.is_empty() {
+                    None
+                } else {
+                    Some(self.selected)
+                });
             }
             Err(_) => {
                 self.entries = Vec::new();
@@ -84,7 +75,13 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut ReflogState) {
 
     let header_cells = ["#", "Hash", "Operation", "Message", "When"]
         .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        .map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = state
@@ -103,7 +100,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut ReflogState) {
             Row::new(vec![
                 Cell::from(format!("{}", e.index)).style(Style::default().fg(Color::DarkGray)),
                 Cell::from(e.short_hash.as_str()).style(Style::default().fg(Color::Yellow)),
-                Cell::from(e.operation.as_str()).style(Style::default().fg(op_color).add_modifier(Modifier::BOLD)),
+                Cell::from(e.operation.as_str())
+                    .style(Style::default().fg(op_color).add_modifier(Modifier::BOLD)),
                 Cell::from(e.message.as_str()).style(Style::default().fg(Color::White)),
                 Cell::from(e.date.as_str()).style(Style::default().fg(Color::DarkGray)),
             ])
@@ -126,7 +124,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut ReflogState) {
         Block::default()
             .title(Span::styled(
                 format!(" 🔄 Reflog ({}) ", filter_text),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan)),
@@ -149,7 +149,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut ReflogState) {
         Span::styled("[q]", Style::default().fg(Color::DarkGray)),
         Span::raw(" Back"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(hints, chunks[1]);
 }
 
@@ -169,7 +173,10 @@ fn render_detail(f: &mut Frame, area: Rect, state: &ReflogState) {
         .collect();
 
     let title = if let Some(entry) = state.entries.get(state.selected) {
-        format!(" Reflog #{} — {} {} ", entry.index, entry.operation, entry.short_hash)
+        format!(
+            " Reflog #{} — {} {} ",
+            entry.index, entry.operation, entry.short_hash
+        )
     } else {
         " Reflog Detail ".to_string()
     };
@@ -193,8 +200,12 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
     if state.show_diff {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => state.show_diff = false,
-            KeyCode::Down | KeyCode::Char('j') => state.detail_scroll = state.detail_scroll.saturating_add(1),
-            KeyCode::Up | KeyCode::Char('k') => state.detail_scroll = state.detail_scroll.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => {
+                state.detail_scroll = state.detail_scroll.saturating_add(1)
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.detail_scroll = state.detail_scroll.saturating_sub(1)
+            }
             KeyCode::PageDown => state.detail_scroll = state.detail_scroll.saturating_add(20),
             KeyCode::PageUp => state.detail_scroll = state.detail_scroll.saturating_sub(20),
             _ => {}

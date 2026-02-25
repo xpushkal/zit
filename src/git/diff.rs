@@ -1,5 +1,5 @@
-use anyhow::Result;
 use super::runner::run_git;
+use anyhow::Result;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffLineType {
@@ -16,6 +16,7 @@ pub struct DiffLine {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Hunk {
     pub header: String,
     pub old_start: u32,
@@ -71,11 +72,7 @@ fn parse_diff_output(output: &str) -> Vec<FileDiff> {
             }
 
             // Parse file path from "diff --git a/path b/path"
-            let path = line
-                .rsplit(" b/")
-                .next()
-                .unwrap_or("")
-                .to_string();
+            let path = line.rsplit(" b/").next().unwrap_or("").to_string();
 
             current_file = Some(FileDiff {
                 path,
@@ -85,11 +82,7 @@ fn parse_diff_output(output: &str) -> Vec<FileDiff> {
             current_hunk = None;
         } else if line.starts_with("rename from ") {
             if let Some(ref mut f) = current_file {
-                f.old_path = Some(
-                    line.strip_prefix("rename from ")
-                        .unwrap_or("")
-                        .to_string(),
-                );
+                f.old_path = Some(line.strip_prefix("rename from ").unwrap_or("").to_string());
             }
         } else if line.starts_with("@@") {
             // Save previous hunk

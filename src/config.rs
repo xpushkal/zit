@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Config {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -20,7 +20,7 @@ pub struct GeneralConfig {
     pub confirm_destructive: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct GithubConfig {
     #[serde(default)]
     pub pat: Option<String>,
@@ -33,9 +33,7 @@ pub struct GithubConfig {
 impl GithubConfig {
     /// Get the best available token (OAuth preferred over PAT).
     pub fn get_token(&self) -> Option<&str> {
-        self.oauth_token
-            .as_deref()
-            .or(self.pat.as_deref())
+        self.oauth_token.as_deref().or(self.pat.as_deref())
     }
 }
 
@@ -68,31 +66,11 @@ impl Default for GeneralConfig {
     }
 }
 
-impl Default for GithubConfig {
-    fn default() -> Self {
-        Self {
-            pat: None,
-            oauth_token: None,
-            username: None,
-        }
-    }
-}
-
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             color_scheme: default_color_scheme(),
             show_help_hints: true,
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            github: GithubConfig::default(),
-            ui: UiConfig::default(),
         }
     }
 }

@@ -3,8 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::config::Config;
 use crate::git;
-use crate::ui::{dashboard, staging, commit, branches, timeline, time_travel, reflog, github};
-
+use crate::ui::{branches, commit, dashboard, github, reflog, staging, time_travel, timeline};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum View {
@@ -50,6 +49,7 @@ pub enum ConfirmAction {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum InputAction {
     CreateBranch,
     RenameBranch,
@@ -98,6 +98,7 @@ impl App {
     }
 
     /// Refresh data for the current view.
+    #[allow(dead_code)]
     pub fn refresh(&mut self) {
         match self.view {
             View::Dashboard => self.dashboard_state.refresh(),
@@ -116,7 +117,10 @@ impl App {
         // Handle popup first
         match &self.popup {
             Popup::Help => {
-                if key.code == KeyCode::Esc || key.code == KeyCode::Char('?') || key.code == KeyCode::Char('q') {
+                if key.code == KeyCode::Esc
+                    || key.code == KeyCode::Char('?')
+                    || key.code == KeyCode::Char('q')
+                {
                     self.popup = Popup::None;
                 }
                 return Ok(());
@@ -135,7 +139,9 @@ impl App {
                 }
                 return Ok(());
             }
-            Popup::Input { value, on_submit, .. } => {
+            Popup::Input {
+                value, on_submit, ..
+            } => {
                 let mut val = value.clone();
                 let action = on_submit.clone();
                 match key.code {
@@ -163,7 +169,10 @@ impl App {
                 return Ok(());
             }
             Popup::Message { .. } => {
-                if key.code == KeyCode::Esc || key.code == KeyCode::Enter || key.code == KeyCode::Char('q') {
+                if key.code == KeyCode::Esc
+                    || key.code == KeyCode::Enter
+                    || key.code == KeyCode::Char('q')
+                {
                     self.popup = Popup::None;
                 }
                 return Ok(());
@@ -260,21 +269,30 @@ impl App {
             }
             ConfirmAction::HardReset(hash) => {
                 match git::run_git(&["reset", "--hard", &hash]) {
-                    Ok(_) => self.status_message = Some(format!("Hard reset to {}", &hash[..7.min(hash.len())])),
+                    Ok(_) => {
+                        self.status_message =
+                            Some(format!("Hard reset to {}", &hash[..7.min(hash.len())]))
+                    }
                     Err(e) => self.status_message = Some(format!("Error: {}", e)),
                 }
                 self.time_travel_state.refresh();
             }
             ConfirmAction::MixedReset(hash) => {
                 match git::run_git(&["reset", "--mixed", &hash]) {
-                    Ok(_) => self.status_message = Some(format!("Mixed reset to {}", &hash[..7.min(hash.len())])),
+                    Ok(_) => {
+                        self.status_message =
+                            Some(format!("Mixed reset to {}", &hash[..7.min(hash.len())]))
+                    }
                     Err(e) => self.status_message = Some(format!("Error: {}", e)),
                 }
                 self.time_travel_state.refresh();
             }
             ConfirmAction::SoftReset(hash) => {
                 match git::run_git(&["reset", "--soft", &hash]) {
-                    Ok(_) => self.status_message = Some(format!("Soft reset to {}", &hash[..7.min(hash.len())])),
+                    Ok(_) => {
+                        self.status_message =
+                            Some(format!("Soft reset to {}", &hash[..7.min(hash.len())]))
+                    }
                     Err(e) => self.status_message = Some(format!("Error: {}", e)),
                 }
                 self.time_travel_state.refresh();
@@ -283,17 +301,19 @@ impl App {
                 if let Some(token) = self.config.github.get_token().map(|t| t.to_string()) {
                     match git::github_auth::remove_collaborator(&token, &username) {
                         Ok(()) => {
-                            self.github_state.collab_error = Some(format!("✓ Removed @{}", username));
+                            self.github_state.collab_error =
+                                Some(format!("✓ Removed @{}", username));
                             // Refresh collaborator list
-                            match git::github_auth::list_collaborators(&token) {
-                                Ok(collabs) => {
-                                    self.github_state.collaborators = collabs;
-                                    self.github_state.collab_selected = 0;
-                                    self.github_state.collab_list_state.select(
-                                        if self.github_state.collaborators.is_empty() { None } else { Some(0) },
-                                    );
-                                }
-                                Err(_) => {}
+                            if let Ok(collabs) = git::github_auth::list_collaborators(&token) {
+                                self.github_state.collaborators = collabs;
+                                self.github_state.collab_selected = 0;
+                                self.github_state.collab_list_state.select(
+                                    if self.github_state.collaborators.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    },
+                                );
                             }
                         }
                         Err(e) => {
@@ -314,7 +334,9 @@ impl App {
         match action {
             InputAction::CreateBranch => {
                 match git::BranchOps::create(value.trim(), None) {
-                    Ok(()) => self.status_message = Some(format!("Created branch '{}'", value.trim())),
+                    Ok(()) => {
+                        self.status_message = Some(format!("Created branch '{}'", value.trim()))
+                    }
                     Err(e) => self.status_message = Some(format!("Error: {}", e)),
                 }
                 self.branches_state.refresh();
@@ -346,15 +368,16 @@ impl App {
                         Ok(msg) => {
                             self.github_state.collab_error = Some(format!("✓ {}", msg));
                             // Refresh collaborator list
-                            match git::github_auth::list_collaborators(&token) {
-                                Ok(collabs) => {
-                                    self.github_state.collaborators = collabs;
-                                    self.github_state.collab_selected = 0;
-                                    self.github_state.collab_list_state.select(
-                                        if self.github_state.collaborators.is_empty() { None } else { Some(0) },
-                                    );
-                                }
-                                Err(_) => {}
+                            if let Ok(collabs) = git::github_auth::list_collaborators(&token) {
+                                self.github_state.collaborators = collabs;
+                                self.github_state.collab_selected = 0;
+                                self.github_state.collab_list_state.select(
+                                    if self.github_state.collaborators.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    },
+                                );
                             }
                         }
                         Err(e) => {
@@ -373,6 +396,7 @@ impl App {
     }
 
     /// Clear the status message.
+    #[allow(dead_code)]
     pub fn clear_status(&mut self) {
         self.status_message = None;
     }

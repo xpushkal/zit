@@ -1,8 +1,10 @@
-use anyhow::Result;
 use super::runner::run_git;
+use anyhow::Result;
 
+#[allow(dead_code)]
 pub struct RemoteOps;
 
+#[allow(dead_code)]
 impl RemoteOps {
     /// List all remotes with their URLs.
     pub fn list() -> Result<Vec<(String, String)>> {
@@ -47,6 +49,17 @@ impl RemoteOps {
 
     /// Pull from a remote with rebase.
     pub fn pull(remote: &str, branch: &str) -> Result<String> {
-        run_git(&["pull", "--rebase", "--allow-unrelated-histories", remote, branch])
+        run_git(&["pull", "--rebase", remote, branch])
+    }
+
+    /// Pull from a remote, allowing unrelated histories (use with caution).
+    pub fn pull_allow_unrelated(remote: &str, branch: &str) -> Result<String> {
+        run_git(&[
+            "pull",
+            "--rebase",
+            "--allow-unrelated-histories",
+            remote,
+            branch,
+        ])
     }
 }

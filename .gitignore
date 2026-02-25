@@ -3,8 +3,7 @@
 debug/
 *.pdb
 
-# Cargo lock is committed for binaries
-# Cargo.lock
+# Cargo lock is committed for binaries (do NOT ignore for binary crates)
 
 # IDE / Editor
 .idea/

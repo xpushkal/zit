@@ -8,15 +8,11 @@ authors = ["Meet Patel"]
 repository = "https://github.com/JUSTMEETPATEL/zit"
 
 [dependencies]
-# CLI
-clap = { version = "4", features = ["derive"] }
-
 # TUI
 ratatui = "0.28"
 crossterm = "0.28"
 
-# Async / HTTP
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+# HTTP
 reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
 
 # Serialization
@@ -27,6 +23,9 @@ toml = "0.8"
 # Utilities
 dirs = "6"
 anyhow = "1"
-chrono = { version = "0.4", features = ["serde"] }
 unicode-width = "0.2"
-regex = "1.12.3"
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"
+pretty_assertions = "1"

@@ -14,6 +14,7 @@ class Zit < Formula
   end
 
   test do
-    system "#{bin}/zit", "--help"
+    # zit requires a git repo; verify the binary runs and detects non-repo
+    assert_match "Not a git repository", shell_output("#{bin}/zit 2>&1", 1)
   end
 end

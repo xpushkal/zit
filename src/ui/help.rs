@@ -1,11 +1,12 @@
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
 
+use super::utils::centered_rect;
 use crate::app::View;
 
 pub fn render(f: &mut Frame, area: Rect, current_view: View) {
@@ -100,14 +101,21 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
     let mut lines = vec![
         Line::from(Span::styled(
             format!("  {} — Keybindings", view_name),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::raw("")),
     ];
 
     for (key, desc) in keybindings {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:>14}  ", key), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  {:>14}  ", key),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(desc, Style::default().fg(Color::White)),
         ]));
     }
@@ -121,31 +129,16 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
     let help = Paragraph::new(lines)
         .block(
             Block::default()
-                .title(Span::styled(" ❓ Help ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                .title(Span::styled(
+                    " ❓ Help ",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         )
         .wrap(Wrap { trim: false });
 
     f.render_widget(help, popup_area);
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(ratatui::layout::Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(ratatui::layout::Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }

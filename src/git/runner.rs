@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::process::Command;
 
 /// Execute a git command with the given arguments and return stdout.
@@ -24,6 +24,7 @@ pub fn is_git_repo() -> bool {
 }
 
 /// Get the repository root path.
+#[allow(dead_code)]
 pub fn repo_root() -> Result<String> {
     let out = run_git(&["rev-parse", "--show-toplevel"])?;
     Ok(out.trim().to_string())

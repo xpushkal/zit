@@ -83,22 +83,37 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut GitHubState, config: &crate
     }
 }
 
-fn render_menu(f: &mut Frame, area: Rect, state: &mut GitHubState, has_token: bool, config: &crate::config::Config) {
+fn render_menu(
+    f: &mut Frame,
+    area: Rect,
+    state: &mut GitHubState,
+    has_token: bool,
+    config: &crate::config::Config,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Title
             Constraint::Length(3), // Auth status
-            Constraint::Min(8),   // Menu
+            Constraint::Min(8),    // Menu
             Constraint::Length(2), // Status
         ])
         .split(area);
 
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  🐙 ", Style::default()),
-        Span::styled("GitHub Integration", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "GitHub Integration",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Auth status
@@ -115,12 +130,19 @@ fn render_menu(f: &mut Frame, area: Rect, state: &mut GitHubState, has_token: bo
     } else {
         Paragraph::new(Line::from(vec![
             Span::styled("  ✗ ", Style::default().fg(Color::Red)),
-            Span::styled("Not authenticated — press ", Style::default().fg(Color::Red)),
+            Span::styled(
+                "Not authenticated — press ",
+                Style::default().fg(Color::Red),
+            ),
             Span::styled("[a]", Style::default().fg(Color::Cyan)),
             Span::styled(" to login with GitHub", Style::default().fg(Color::Red)),
         ]))
     };
-    let auth_status = auth_status.block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let auth_status = auth_status.block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(auth_status, chunks[1]);
 
     // Menu
@@ -151,7 +173,14 @@ fn render_menu(f: &mut Frame, area: Rect, state: &mut GitHubState, has_token: bo
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("  🚪  ", Style::default()),
-            Span::styled("Logout", Style::default().fg(if has_token { Color::Red } else { Color::DarkGray })),
+            Span::styled(
+                "Logout",
+                Style::default().fg(if has_token {
+                    Color::Red
+                } else {
+                    Color::DarkGray
+                }),
+            ),
         ])),
     ];
 
@@ -162,7 +191,11 @@ fn render_menu(f: &mut Frame, area: Rect, state: &mut GitHubState, has_token: bo
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("▶ ");
 
     f.render_stateful_widget(menu, chunks[2], &mut state.menu_state);
@@ -181,21 +214,30 @@ fn render_device_auth(f: &mut Frame, area: Rect, auth: &DeviceAuthState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Title
-            Constraint::Length(5),  // Instructions
-            Constraint::Length(5),  // Code display
-            Constraint::Length(3),  // URL
-            Constraint::Length(3),  // Status
+            Constraint::Length(3), // Title
+            Constraint::Length(5), // Instructions
+            Constraint::Length(5), // Code display
+            Constraint::Length(3), // URL
+            Constraint::Length(3), // Status
             Constraint::Min(1),    // Spacer
-            Constraint::Length(2),  // Keys
+            Constraint::Length(2), // Keys
         ])
         .split(area);
 
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  🔑 ", Style::default()),
-        Span::styled("Login with GitHub", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Login with GitHub",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Instructions
@@ -203,18 +245,31 @@ fn render_device_auth(f: &mut Frame, area: Rect, auth: &DeviceAuthState) {
         Line::from(""),
         Line::from(vec![
             Span::styled("  1. ", Style::default().fg(Color::Cyan)),
-            Span::styled("Open the URL below in your browser", Style::default().fg(Color::White)),
+            Span::styled(
+                "Open the URL below in your browser",
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  2. ", Style::default().fg(Color::Cyan)),
-            Span::styled("Enter the code shown below", Style::default().fg(Color::White)),
+            Span::styled(
+                "Enter the code shown below",
+                Style::default().fg(Color::White),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  3. ", Style::default().fg(Color::Cyan)),
-            Span::styled("Authorize zit — we'll detect it automatically", Style::default().fg(Color::White)),
+            Span::styled(
+                "Authorize zit — we'll detect it automatically",
+                Style::default().fg(Color::White),
+            ),
         ]),
     ])
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(instructions, chunks[1]);
 
     // User code — big and prominent
@@ -233,7 +288,10 @@ fn render_device_auth(f: &mut Frame, area: Rect, auth: &DeviceAuthState) {
     ])
     .block(
         Block::default()
-            .title(Span::styled(" Verification Code ", Style::default().fg(Color::Yellow)))
+            .title(Span::styled(
+                " Verification Code ",
+                Style::default().fg(Color::Yellow),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow)),
     );
@@ -249,7 +307,11 @@ fn render_device_auth(f: &mut Frame, area: Rect, auth: &DeviceAuthState) {
                 .add_modifier(Modifier::UNDERLINED),
         ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(url, chunks[3]);
 
     // Polling status
@@ -259,7 +321,11 @@ fn render_device_auth(f: &mut Frame, area: Rect, auth: &DeviceAuthState) {
         Span::styled(format!("  {} ", spinner), Style::default().fg(Color::Cyan)),
         Span::styled(&auth.status, Style::default().fg(Color::DarkGray)),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(status, chunks[4]);
 
     // Keys
@@ -279,15 +345,21 @@ fn render_create_repo(f: &mut Frame, area: Rect, state: &GitHubState) {
             Constraint::Length(3), // Description
             Constraint::Length(3), // Visibility
             Constraint::Length(3), // Submit
-            Constraint::Min(1),   // Spacer
+            Constraint::Min(1),    // Spacer
         ])
         .split(area);
 
     let title = Paragraph::new(Span::styled(
         "  📦 Create GitHub Repository",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     ))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(title, chunks[0]);
 
     let field_style = |idx: usize| {
@@ -302,32 +374,58 @@ fn render_create_repo(f: &mut Frame, area: Rect, state: &GitHubState) {
         Span::styled("  Name: ", Style::default().fg(Color::DarkGray)),
         Span::styled(&state.repo_name, Style::default().fg(Color::White)),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(field_style(0)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(field_style(0)),
+    );
     f.render_widget(name, chunks[1]);
 
     let desc = Paragraph::new(Line::from(vec![
         Span::styled("  Description: ", Style::default().fg(Color::DarkGray)),
         Span::styled(&state.repo_desc, Style::default().fg(Color::White)),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(field_style(1)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(field_style(1)),
+    );
     f.render_widget(desc, chunks[2]);
 
     let vis = Paragraph::new(Line::from(vec![
         Span::styled("  Visibility: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            if state.repo_private { "Private 🔒" } else { "Public 🌍" },
-            Style::default().fg(if state.repo_private { Color::Yellow } else { Color::Green }),
+            if state.repo_private {
+                "Private 🔒"
+            } else {
+                "Public 🌍"
+            },
+            Style::default().fg(if state.repo_private {
+                Color::Yellow
+            } else {
+                Color::Green
+            }),
         ),
         Span::styled("  (Space to toggle)", Style::default().fg(Color::DarkGray)),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(field_style(2)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(field_style(2)),
+    );
     f.render_widget(vis, chunks[3]);
 
     let submit = Paragraph::new(Span::styled(
         "  [Enter] Create Repository",
-        Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
     ))
-    .block(Block::default().borders(Borders::ALL).border_style(field_style(3)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(field_style(3)),
+    );
     f.render_widget(submit, chunks[4]);
 }
 
@@ -336,7 +434,7 @@ fn render_collaborators(f: &mut Frame, area: Rect, state: &mut GitHubState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Title
-            Constraint::Min(6),   // List
+            Constraint::Min(6),    // List
             Constraint::Length(2), // Keys
             Constraint::Length(2), // Status/Error
         ])
@@ -344,19 +442,31 @@ fn render_collaborators(f: &mut Frame, area: Rect, state: &mut GitHubState) {
 
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  👥 ", Style::default()),
-        Span::styled("Collaborators", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Collaborators",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             format!("  ({} total)", state.collaborators.len()),
             Style::default().fg(Color::DarkGray),
         ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Collaborator list
     if state.collaborators.is_empty() {
         let empty = Paragraph::new(Line::from(vec![
-            Span::styled("  No collaborators found. Press ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "  No collaborators found. Press ",
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled("[a]", Style::default().fg(Color::Cyan)),
             Span::styled(" to add one.", Style::default().fg(Color::DarkGray)),
         ]))
@@ -373,8 +483,16 @@ fn render_collaborators(f: &mut Frame, area: Rect, state: &mut GitHubState) {
             .map(|c| {
                 ListItem::new(Line::from(vec![
                     Span::styled("  @", Style::default().fg(Color::DarkGray)),
-                    Span::styled(&c.login, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("  ({})", c.role), Style::default().fg(Color::DarkGray)),
+                    Span::styled(
+                        &c.login,
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("  ({})", c.role),
+                        Style::default().fg(Color::DarkGray),
+                    ),
                 ]))
             })
             .collect();
@@ -385,7 +503,11 @@ fn render_collaborators(f: &mut Frame, area: Rect, state: &mut GitHubState) {
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::DarkGray)),
             )
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol("▶ ");
 
         f.render_stateful_widget(list, chunks[1], &mut state.collab_list_state);
@@ -449,7 +571,8 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                 1 => {
                     // Create repo
                     if app.config.github.get_token().is_none() {
-                        app.github_state.status = Some("Login first to create a repository".to_string());
+                        app.github_state.status =
+                            Some("Login first to create a repository".to_string());
                         return Ok(());
                     }
                     app.github_state.view = GitHubView::CreateRepo;
@@ -502,12 +625,10 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                         std::thread::spawn(move || {
                             let pull = git::RemoteOps::pull("origin", &br);
                             let result = match pull {
-                                Ok(_) => {
-                                    match git::RemoteOps::push("origin", &br, true) {
-                                        Ok(_) => format!("✓ Synced with origin/{}", br),
-                                        Err(e) => format!("Push failed after pull: {}", e),
-                                    }
-                                }
+                                Ok(_) => match git::RemoteOps::push("origin", &br, true) {
+                                    Ok(_) => format!("✓ Synced with origin/{}", br),
+                                    Err(e) => format!("Push failed after pull: {}", e),
+                                },
                                 Err(e) => format!("Pull failed: {}", e),
                             };
                             if let Ok(mut r) = bg.lock() {
@@ -519,7 +640,8 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                 5 => {
                     // Collaborators — load and switch view
                     if app.config.github.get_token().is_none() {
-                        app.github_state.status = Some("Login first to manage collaborators".to_string());
+                        app.github_state.status =
+                            Some("Login first to manage collaborators".to_string());
                         return Ok(());
                     }
                     load_collaborators(app);
@@ -678,7 +800,8 @@ fn handle_create_repo_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::R
                     Ok(clone_url) => {
                         // Add remote origin if not already set
                         let _ = git::RemoteOps::add("origin", &clone_url);
-                        app.github_state.status = Some(format!("✓ Created '{}' and added as origin", name));
+                        app.github_state.status =
+                            Some(format!("✓ Created '{}' and added as origin", name));
                         app.github_state.view = GitHubView::Menu;
                     }
                     Err(e) => {
@@ -689,20 +812,20 @@ fn handle_create_repo_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::R
                 app.github_state.status = Some("Login first to create a repository".to_string());
             }
         }
-        KeyCode::Char(c) => {
-            match app.github_state.create_field {
-                0 => app.github_state.repo_name.push(c),
-                1 => app.github_state.repo_desc.push(c),
-                _ => {}
+        KeyCode::Char(c) => match app.github_state.create_field {
+            0 => app.github_state.repo_name.push(c),
+            1 => app.github_state.repo_desc.push(c),
+            _ => {}
+        },
+        KeyCode::Backspace => match app.github_state.create_field {
+            0 => {
+                app.github_state.repo_name.pop();
             }
-        }
-        KeyCode::Backspace => {
-            match app.github_state.create_field {
-                0 => { app.github_state.repo_name.pop(); }
-                1 => { app.github_state.repo_desc.pop(); }
-                _ => {}
+            1 => {
+                app.github_state.repo_desc.pop();
             }
-        }
+            _ => {}
+        },
         _ => {}
     }
 
@@ -715,7 +838,13 @@ fn load_collaborators(app: &mut crate::app::App) {
             Ok(collabs) => {
                 app.github_state.collaborators = collabs;
                 app.github_state.collab_selected = 0;
-                app.github_state.collab_list_state.select(if app.github_state.collaborators.is_empty() { None } else { Some(0) });
+                app.github_state.collab_list_state.select(
+                    if app.github_state.collaborators.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    },
+                );
                 app.github_state.collab_error = None;
             }
             Err(e) => {
@@ -764,10 +893,7 @@ fn handle_collaborators_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow:
                 let login = collab.login.clone();
                 app.popup = crate::app::Popup::Confirm {
                     title: "Remove Collaborator".to_string(),
-                    message: format!(
-                        "Remove @{} from this repository?\n\n[y] Yes  [n] No",
-                        login
-                    ),
+                    message: format!("Remove @{} from this repository?\n\n[y] Yes  [n] No", login),
                     on_confirm: crate::app::ConfirmAction::RemoveCollaborator(login),
                 };
             }

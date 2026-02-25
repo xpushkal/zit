@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod app;
 mod config;
 mod event;
@@ -13,7 +11,7 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
@@ -27,7 +25,9 @@ use event::{AppEvent, EventHandler};
 fn main() -> Result<()> {
     // Check if we're in a git repo
     if !git::runner::is_git_repo() {
-        eprintln!("Error: Not a git repository. Run 'git init' first or navigate to a git repository.");
+        eprintln!(
+            "Error: Not a git repository. Run 'git init' first or navigate to a git repository."
+        );
         std::process::exit(1);
     }
 
@@ -137,7 +137,12 @@ fn draw(f: &mut Frame, app: &mut App) {
         Popup::Confirm { title, message, .. } => {
             render_popup(f, area, title, message, Color::Yellow);
         }
-        Popup::Input { title, prompt, value, .. } => {
+        Popup::Input {
+            title,
+            prompt,
+            value,
+            ..
+        } => {
             let content = format!("{}{}", prompt, value);
             render_popup(f, area, title, &content, Color::Cyan);
         }
@@ -149,12 +154,17 @@ fn draw(f: &mut Frame, app: &mut App) {
 }
 
 fn render_popup(f: &mut Frame, area: Rect, title: &str, message: &str, border_color: Color) {
-    let popup_area = centered_rect(50, 40, area);
+    let popup_area = ui::utils::centered_rect(50, 40, area);
     f.render_widget(Clear, popup_area);
 
     let lines: Vec<Line> = message
         .lines()
-        .map(|l| Line::from(Span::styled(format!("  {}", l), Style::default().fg(Color::White))))
+        .map(|l| {
+            Line::from(Span::styled(
+                format!("  {}", l),
+                Style::default().fg(Color::White),
+            ))
+        })
         .collect();
 
     let popup = Paragraph::new(lines)
@@ -162,7 +172,9 @@ fn render_popup(f: &mut Frame, area: Rect, title: &str, message: &str, border_co
             Block::default()
                 .title(Span::styled(
                     format!(" {} ", title),
-                    Style::default().fg(border_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(border_color)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(border_color)),
@@ -170,24 +182,4 @@ fn render_popup(f: &mut Frame, area: Rect, title: &str, message: &str, border_co
         .wrap(Wrap { trim: false });
 
     f.render_widget(popup, popup_area);
-}
-
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
-        ])
-        .split(r);
-
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
-            Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
-        ])
-        .split(popup_layout[1])[1]
 }
