@@ -35,6 +35,22 @@ pub struct RepoStatus {
     pub stash_count: u32,
 }
 
+impl Default for RepoStatus {
+    fn default() -> Self {
+        Self {
+            branch: String::from("(unknown)"),
+            upstream: None,
+            ahead: 0,
+            behind: 0,
+            staged: Vec::new(),
+            unstaged: Vec::new(),
+            untracked: Vec::new(),
+            conflicts: Vec::new(),
+            stash_count: 0,
+        }
+    }
+}
+
 impl RepoStatus {
     pub fn is_clean(&self) -> bool {
         self.staged.is_empty()

@@ -44,6 +44,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("Enter", "New line"),
             ("Ctrl+S", "Submit commit"),
             ("Ctrl+A", "Amend previous commit"),
+            ("Ctrl+G", "Generate AI commit message"),
             ("Esc", "Stop editing / Back"),
         ],
         View::Branches => vec![

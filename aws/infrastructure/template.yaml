@@ -6,7 +6,7 @@ Globals:
   Function:
     Timeout: 60
     MemorySize: 512
-    Runtime: python3.11
+    Runtime: python3.12
     Tracing: Active
 
 Parameters:
@@ -39,13 +39,13 @@ Resources:
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
-              Resource: '*'
+              Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
             - Effect: Allow
               Action:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
-              Resource: '*'
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*'
       Events:
         ApiEvent:
           Type: Api
@@ -102,3 +102,7 @@ Outputs:
   FunctionName:
     Description: Lambda Function Name
     Value: !Ref ZitAIMentorFunction
+
+  ApiKeyId:
+    Description: API Key ID (retrieve value from AWS Console or CLI)
+    Value: !Ref ZitApi

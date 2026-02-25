@@ -1,6 +1,7 @@
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::ai::client::AiClient;
 use crate::config::Config;
 use crate::git;
 use crate::ui::{branches, commit, dashboard, github, reflog, staging, time_travel, timeline};
@@ -66,6 +67,7 @@ pub struct App {
     pub popup: Popup,
     pub config: Config,
     pub status_message: Option<String>,
+    pub ai_client: Option<AiClient>,
 
     // View states
     pub dashboard_state: dashboard::DashboardState,
@@ -80,12 +82,14 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> Self {
+        let ai_client = AiClient::from_config(&config.ai);
         Self {
             running: true,
             view: View::Dashboard,
             popup: Popup::None,
             config,
             status_message: None,
+            ai_client,
             dashboard_state: dashboard::DashboardState::default(),
             staging_state: staging::StagingState::default(),
             commit_state: commit::CommitState::default(),

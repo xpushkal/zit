@@ -10,6 +10,8 @@ pub struct Config {
     pub github: GithubConfig,
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -71,6 +73,33 @@ impl Default for UiConfig {
         Self {
             color_scheme: default_color_scheme(),
             show_help_hints: true,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AiConfig {
+    /// Enable AI mentor features.
+    #[serde(default)]
+    pub enabled: bool,
+    /// API Gateway endpoint URL (e.g. https://xxx.execute-api.region.amazonaws.com/dev/mentor).
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    /// API key for the API Gateway.
+    #[serde(default)]
+    pub api_key: Option<String>,
+    /// Request timeout in seconds.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: None,
+            api_key: None,
+            timeout_secs: Some(30),
         }
     }
 }
