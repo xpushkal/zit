@@ -9,20 +9,11 @@ use ratatui::{
 
 use crate::git;
 
+#[derive(Default)]
 pub struct TimeTravelState {
     pub commits: Vec<git::CommitEntry>,
     pub selected: usize,
     pub list_state: ListState,
-}
-
-impl Default for TimeTravelState {
-    fn default() -> Self {
-        Self {
-            commits: Vec::new(),
-            selected: 0,
-            list_state: ListState::default(),
-        }
-    }
 }
 
 impl TimeTravelState {
@@ -33,7 +24,11 @@ impl TimeTravelState {
                 if self.selected >= self.commits.len() && !self.commits.is_empty() {
                     self.selected = self.commits.len() - 1;
                 }
-                self.list_state.select(if self.commits.is_empty() { None } else { Some(self.selected) });
+                self.list_state.select(if self.commits.is_empty() {
+                    None
+                } else {
+                    Some(self.selected)
+                });
             }
             Err(_) => {
                 self.commits = Vec::new();
@@ -46,8 +41,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimeTravelState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(10),    // Commit list
-            Constraint::Length(5),  // Action hints
+            Constraint::Min(10),   // Commit list
+            Constraint::Length(5), // Action hints
         ])
         .split(area);
 
@@ -57,9 +52,15 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimeTravelState) {
         .iter()
         .map(|c| {
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", c.short_hash), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("  {} ", c.short_hash),
+                    Style::default().fg(Color::Yellow),
+                ),
                 Span::styled(&c.message, Style::default().fg(Color::White)),
-                Span::styled(format!("  {}", c.date), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {}", c.date),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]))
         })
         .collect();
@@ -69,12 +70,18 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimeTravelState) {
             Block::default()
                 .title(Span::styled(
                     " ⏪ Time Travel — Select a commit ",
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Magenta)),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("▶ ");
 
     f.render_stateful_widget(list, chunks[0], &mut state.list_state);
@@ -100,7 +107,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut TimeTravelState) {
     ])
     .block(
         Block::default()
-            .title(Span::styled(" Actions ", Style::default().fg(Color::DarkGray)))
+            .title(Span::styled(
+                " Actions ",
+                Style::default().fg(Color::DarkGray),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray)),
     );

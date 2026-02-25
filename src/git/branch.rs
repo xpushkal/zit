@@ -1,5 +1,5 @@
-use anyhow::Result;
 use super::runner::run_git;
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct BranchEntry {

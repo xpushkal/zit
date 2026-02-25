@@ -9,22 +9,12 @@ use ratatui::{
 
 use crate::git;
 
+#[derive(Default)]
 pub struct BranchesState {
     pub branches: Vec<git::BranchEntry>,
     pub selected: usize,
     pub table_state: TableState,
     pub show_remote: bool,
-}
-
-impl Default for BranchesState {
-    fn default() -> Self {
-        Self {
-            branches: Vec::new(),
-            selected: 0,
-            table_state: TableState::default(),
-            show_remote: false,
-        }
-    }
 }
 
 impl BranchesState {
@@ -39,14 +29,24 @@ impl BranchesState {
         if self.selected >= self.branches.len() && !self.branches.is_empty() {
             self.selected = self.branches.len() - 1;
         }
-        self.table_state.select(if self.branches.is_empty() { None } else { Some(self.selected) });
+        self.table_state.select(if self.branches.is_empty() {
+            None
+        } else {
+            Some(self.selected)
+        });
     }
 }
 
 pub fn render(f: &mut Frame, area: Rect, state: &mut BranchesState) {
     let header_cells = ["", "Branch", "Upstream", "Last Commit", "Author", "Date"]
         .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        .map(|h| {
+            Cell::from(*h).style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
+        });
     let header = Row::new(header_cells).height(1);
 
     let rows: Vec<Row> = state
@@ -54,9 +54,15 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut BranchesState) {
         .iter()
         .map(|b| {
             let current_marker = if b.is_current { "●" } else { " " };
-            let marker_color = if b.is_current { Color::Green } else { Color::DarkGray };
+            let marker_color = if b.is_current {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
             let name_style = if b.is_current {
-                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
             } else if b.is_remote {
                 Style::default().fg(Color::Red)
             } else {
@@ -68,13 +74,18 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut BranchesState) {
                 Cell::from(b.name.as_str()).style(name_style),
                 Cell::from(b.upstream.as_str()).style(Style::default().fg(Color::DarkGray)),
                 Cell::from(b.last_commit_msg.as_str()).style(Style::default().fg(Color::White)),
-                Cell::from(b.last_commit_author.as_str()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(b.last_commit_author.as_str())
+                    .style(Style::default().fg(Color::DarkGray)),
                 Cell::from(b.last_commit_date.as_str()).style(Style::default().fg(Color::DarkGray)),
             ])
         })
         .collect();
 
-    let remote_indicator = if state.show_remote { " (all) " } else { " (local) " };
+    let remote_indicator = if state.show_remote {
+        " (all) "
+    } else {
+        " (local) "
+    };
 
     let table = Table::new(
         rows,
@@ -92,7 +103,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut BranchesState) {
         Block::default()
             .title(Span::styled(
                 format!(" Branches{} ", remote_indicator),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan)),

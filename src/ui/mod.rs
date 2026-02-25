@@ -1,9 +1,10 @@
-pub mod dashboard;
-pub mod staging;
-pub mod commit;
 pub mod branches;
-pub mod timeline;
-pub mod time_travel;
-pub mod reflog;
+pub mod commit;
+pub mod dashboard;
 pub mod github;
 pub mod help;
+pub mod reflog;
+pub mod staging;
+pub mod time_travel;
+pub mod timeline;
+pub mod utils;

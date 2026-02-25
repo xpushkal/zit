@@ -21,6 +21,7 @@ pub struct StagingState {
     pub selected: usize,
     pub list_state: ListState,
     pub filter: String,
+    #[allow(dead_code)]
     pub show_diff: bool,
     pub diff_lines: Vec<git::DiffLine>,
     pub diff_scroll: u16,
@@ -75,7 +76,11 @@ impl StagingState {
         if self.selected >= self.files.len() && !self.files.is_empty() {
             self.selected = self.files.len() - 1;
         }
-        self.list_state.select(if self.files.is_empty() { None } else { Some(self.selected) });
+        self.list_state.select(if self.files.is_empty() {
+            None
+        } else {
+            Some(self.selected)
+        });
         self.update_diff();
     }
 
@@ -84,7 +89,8 @@ impl StagingState {
             .iter()
             .enumerate()
             .filter(|(_, f)| {
-                self.filter.is_empty() || f.path.to_lowercase().contains(&self.filter.to_lowercase())
+                self.filter.is_empty()
+                    || f.path.to_lowercase().contains(&self.filter.to_lowercase())
             })
             .collect()
     }
@@ -119,7 +125,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
         .split(area);
 
     // File list — collect into owned data to avoid borrow conflict with list_state
-    let filtered: Vec<StagingFile> = state.filtered_files().into_iter().map(|(_, f)| f.clone()).collect();
+    let filtered: Vec<StagingFile> = state
+        .filtered_files()
+        .into_iter()
+        .map(|(_, f)| f.clone())
+        .collect();
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|file| {
@@ -142,11 +152,21 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
                 _ => Color::White,
             };
             let staged_marker = if file.is_staged { "●" } else { "○" };
-            let staged_color = if file.is_staged { Color::Green } else { Color::DarkGray };
+            let staged_color = if file.is_staged {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
 
             ListItem::new(Line::from(vec![
-                Span::styled(format!(" {} ", staged_marker), Style::default().fg(staged_color)),
-                Span::styled(format!("{} ", icon), Style::default().fg(icon_color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {} ", staged_marker),
+                    Style::default().fg(staged_color),
+                ),
+                Span::styled(
+                    format!("{} ", icon),
+                    Style::default().fg(icon_color).add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(&file.path, Style::default().fg(Color::White)),
             ]))
         })
@@ -165,7 +185,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan)),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("▶ ");
 
     f.render_stateful_widget(list, chunks[0], &mut state.list_state);
@@ -205,66 +229,93 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
 }
 
 pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
-    let state = &mut app.staging_state;
+    // Collect a status message to set after releasing the staging_state borrow
+    let mut status_msg: Option<String> = None;
 
-    match key.code {
-        KeyCode::Up | KeyCode::Char('k') => {
-            if state.selected > 0 {
-                state.selected -= 1;
-                state.list_state.select(Some(state.selected));
-                state.update_diff();
+    {
+        let state = &mut app.staging_state;
+
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if state.selected > 0 {
+                    state.selected -= 1;
+                    state.list_state.select(Some(state.selected));
+                    state.update_diff();
+                }
             }
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if state.selected + 1 < state.files.len() {
-                state.selected += 1;
-                state.list_state.select(Some(state.selected));
-                state.update_diff();
+            KeyCode::Down | KeyCode::Char('j') => {
+                if state.selected + 1 < state.files.len() {
+                    state.selected += 1;
+                    state.list_state.select(Some(state.selected));
+                    state.update_diff();
+                }
             }
-        }
-        KeyCode::Char(' ') => {
-            // Toggle stage/unstage
-            if let Some(file) = state.files.get(state.selected).cloned() {
-                if file.is_staged {
-                    let _ = git::run_git(&["restore", "--staged", &file.path]);
-                } else {
-                    let _ = git::run_git(&["add", &file.path]);
+            KeyCode::Char(' ') => {
+                // Toggle stage/unstage
+                if let Some(file) = state.files.get(state.selected).cloned() {
+                    let result = if file.is_staged {
+                        git::run_git(&["restore", "--staged", &file.path])
+                    } else {
+                        git::run_git(&["add", &file.path])
+                    };
+                    if let Err(e) = result {
+                        status_msg = Some(format!("Error: {}", e));
+                    }
+                    state.refresh();
+                }
+            }
+            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // Stage all
+                match git::run_git(&["add", "-A"]) {
+                    Ok(_) => status_msg = Some("All files staged".to_string()),
+                    Err(e) => status_msg = Some(format!("Failed to stage: {}", e)),
                 }
                 state.refresh();
             }
+            KeyCode::Char('u') => {
+                // Unstage all
+                match git::run_git(&["reset", "HEAD"]) {
+                    Ok(_) => status_msg = Some("All files unstaged".to_string()),
+                    Err(e) => status_msg = Some(format!("Failed to unstage: {}", e)),
+                }
+                state.refresh();
+            }
+            KeyCode::Char('/') => {
+                // handled below after borrow is released
+            }
+            KeyCode::Char('c') => {
+                // handled below after borrow is released
+            }
+            KeyCode::PageDown => {
+                state.diff_scroll = state.diff_scroll.saturating_add(10);
+            }
+            KeyCode::PageUp => {
+                state.diff_scroll = state.diff_scroll.saturating_sub(10);
+            }
+            _ => {}
         }
-        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            // Stage all
-            let _ = git::run_git(&["add", "-A"]);
-            state.refresh();
-            app.set_status("All files staged");
-        }
-        KeyCode::Char('u') => {
-            // Unstage all
-            let _ = git::run_git(&["reset", "HEAD"]);
-            state.refresh();
-            app.set_status("All files unstaged");
-        }
+    } // release mutable borrow of staging_state
+
+    // Handle actions that need full App access (no staging_state borrow)
+    match key.code {
         KeyCode::Char('/') => {
+            let filter = app.staging_state.filter.clone();
             app.popup = crate::app::Popup::Input {
                 title: "Search Files".to_string(),
                 prompt: "Filter: ".to_string(),
-                value: state.filter.clone(),
+                value: filter,
                 on_submit: crate::app::InputAction::SearchFiles,
             };
         }
         KeyCode::Char('c') => {
-            // Jump to commit view
             app.view = crate::app::View::Commit;
             app.commit_state.refresh();
         }
-        KeyCode::PageDown => {
-            state.diff_scroll = state.diff_scroll.saturating_add(10);
-        }
-        KeyCode::PageUp => {
-            state.diff_scroll = state.diff_scroll.saturating_sub(10);
-        }
         _ => {}
+    }
+
+    if let Some(msg) = status_msg {
+        app.set_status(&msg);
     }
 
     Ok(())

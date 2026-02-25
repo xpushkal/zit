@@ -1,6 +1,12 @@
+use super::runner::run_git;
 use anyhow::Result;
 use regex::Regex;
-use super::runner::run_git;
+use std::sync::OnceLock;
+
+fn commit_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"([0-9a-f]{40})\x1f").unwrap())
+}
 
 #[derive(Debug, Clone)]
 pub struct CommitEntry {
@@ -8,11 +14,13 @@ pub struct CommitEntry {
     pub short_hash: String,
     pub message: String,
     pub author: String,
-    pub date: String,       // relative date like "2 hours ago"
-    pub date_iso: String,   // ISO format for sorting
+    pub date: String, // relative date like "2 hours ago"
+    #[allow(dead_code)]
+    pub date_iso: String, // ISO format for sorting
+    #[allow(dead_code)]
     pub parents: Vec<String>,
-    pub refs: String,       // decorated refs (HEAD -> main, origin/main, tag: v1.0)
-    pub graph: String,      // graph characters for this line
+    pub refs: String,  // decorated refs (HEAD -> main, origin/main, tag: v1.0)
+    pub graph: String, // graph characters for this line
 }
 
 const LOG_FORMAT: &str = "%H\x1f%h\x1f%s\x1f%an\x1f%ar\x1f%aI\x1f%P\x1f%D";
@@ -25,7 +33,14 @@ pub fn get_log(count: usize, skip: usize, branch: Option<&str>) -> Result<Vec<Co
     let format_str = format!("--format={}", LOG_FORMAT);
 
     // Force color=never to allow reliable regex parsing of graph structure vs content
-    let mut args = vec!["log", &count_str, &skip_str, &format_str, "--graph", "--color=never"];
+    let mut args = vec![
+        "log",
+        &count_str,
+        &skip_str,
+        &format_str,
+        "--graph",
+        "--color=never",
+    ];
 
     if let Some(b) = branch {
         args.push(b);
@@ -43,8 +58,7 @@ pub fn get_recent_commits(count: usize) -> Result<Vec<CommitEntry>> {
 
 fn parse_log_output(output: &str) -> Vec<CommitEntry> {
     let mut entries = Vec::new();
-    // Regex to find the start of the commit data: 40 hex chars followed by our separator
-    let re = Regex::new(r"([0-9a-f]{40})\x1f").unwrap();
+    let re = commit_regex();
 
     for line in output.lines() {
         // Find where the Commit Hash starts
@@ -58,10 +72,7 @@ fn parse_log_output(output: &str) -> Vec<CommitEntry> {
                 continue;
             }
 
-            let parents: Vec<String> = parts[6]
-                .split_whitespace()
-                .map(|s| s.to_string())
-                .collect();
+            let parents: Vec<String> = parts[6].split_whitespace().map(|s| s.to_string()).collect();
 
             entries.push(CommitEntry {
                 hash: parts[0].to_string(),
@@ -97,6 +108,7 @@ fn parse_log_output(output: &str) -> Vec<CommitEntry> {
 }
 
 /// Get the total number of commits in the current branch.
+#[allow(dead_code)]
 pub fn commit_count() -> Result<usize> {
     let output = run_git(&["rev-list", "--count", "HEAD"])?;
     Ok(output.trim().parse().unwrap_or(0))

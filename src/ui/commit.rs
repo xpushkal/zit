@@ -11,6 +11,7 @@ use crate::git;
 
 pub struct CommitState {
     pub message: String,
+    #[allow(dead_code)]
     pub cursor_pos: usize,
     pub staged_files: Vec<git::FileEntry>,
     pub stat_output: String,
@@ -60,7 +61,8 @@ impl CommitState {
                 ));
             }
             if subject.ends_with('.') {
-                self.validation_warnings.push("Subject should not end with a period".to_string());
+                self.validation_warnings
+                    .push("Subject should not end with a period".to_string());
             }
         }
 
@@ -87,8 +89,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Title
-            Constraint::Length(6),  // Staged files summary
+            Constraint::Length(3), // Title
+            Constraint::Length(6), // Staged files summary
             Constraint::Min(8),    // Message editor
             Constraint::Length(4), // Validation + hints
         ])
@@ -97,20 +99,32 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
     // Title
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  ✏ ", Style::default().fg(Color::Green)),
-        Span::styled("Commit", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Commit",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(
             format!("  ({} files staged)", state.staged_files.len()),
             Style::default().fg(Color::DarkGray),
         ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Green)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Staged files
     let stat_paragraph = Paragraph::new(state.stat_output.as_str())
         .block(
             Block::default()
-                .title(Span::styled(" Changes to commit ", Style::default().fg(Color::Green)))
+                .title(Span::styled(
+                    " Changes to commit ",
+                    Style::default().fg(Color::Green),
+                ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         )
@@ -119,15 +133,17 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
     f.render_widget(stat_paragraph, chunks[1]);
 
     // Message editor
-    let editor_border_color = if state.editing { Color::Cyan } else { Color::DarkGray };
+    let editor_border_color = if state.editing {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
     let lines: Vec<Line> = state
         .message
         .lines()
         .enumerate()
         .map(|(i, l)| {
-            let color = if i == 0 && l.len() > 72 {
-                Color::Yellow
-            } else if l.len() > 80 {
+            let color = if (i == 0 && l.len() > 72) || l.len() > 80 {
                 Color::Yellow
             } else {
                 Color::White
@@ -148,7 +164,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
     let editor = Paragraph::new(lines)
         .block(
             Block::default()
-                .title(Span::styled(" Commit Message ", Style::default().fg(Color::White)))
+                .title(Span::styled(
+                    " Commit Message ",
+                    Style::default().fg(Color::White),
+                ))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(editor_border_color)),
         )
@@ -187,8 +206,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
         Span::raw(" Amend"),
     ]));
 
-    let hints = Paragraph::new(hint_lines)
-        .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(Color::DarkGray)));
+    let hints = Paragraph::new(hint_lines).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(hints, chunks[3]);
 }
 
@@ -225,7 +247,11 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             // Tab adds a newline for multi-line commit messages
             state.message.push('\n');
         }
-        KeyCode::Char('a') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+        KeyCode::Char('a')
+            if key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+        {
             // Amend
             if let Ok(prev_msg) = git::run_git(&["log", "-1", "--format=%B"]) {
                 state.message = prev_msg.trim().to_string();
@@ -261,7 +287,10 @@ fn do_commit(app: &mut crate::app::App) -> anyhow::Result<()> {
     let msg = app.commit_state.message.trim().to_string();
     match git::run_git(&["commit", "-m", &msg]) {
         Ok(output) => {
-            app.set_status(format!("✓ {}", output.lines().next().unwrap_or("Committed")));
+            app.set_status(format!(
+                "✓ {}",
+                output.lines().next().unwrap_or("Committed")
+            ));
             app.commit_state.message.clear();
             app.commit_state.editing = true;
             app.view = crate::app::View::Dashboard;

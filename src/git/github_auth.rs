@@ -9,6 +9,7 @@ const SCOPES: &str = "repo,read:user";
 
 /// Response from POST /login/device/code
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
@@ -19,6 +20,7 @@ pub struct DeviceCodeResponse {
 
 /// Successful token response
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct TokenResponse {
     pub access_token: String,
     pub token_type: String,
@@ -220,7 +222,10 @@ pub fn list_collaborators(token: &str) -> Result<Vec<Collaborator>> {
     let (owner, repo) = parse_repo_from_remote()?;
     let client = reqwest::blocking::Client::new();
     let resp = client
-        .get(format!("https://api.github.com/repos/{}/{}/collaborators", owner, repo))
+        .get(format!(
+            "https://api.github.com/repos/{}/{}/collaborators",
+            owner, repo
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "zit-cli")
         .header("Accept", "application/vnd.github+json")
@@ -228,7 +233,9 @@ pub fn list_collaborators(token: &str) -> Result<Vec<Collaborator>> {
         .context("Failed to fetch collaborators")?;
 
     let status = resp.status();
-    let body: serde_json::Value = resp.json().context("Failed to parse collaborators response")?;
+    let body: serde_json::Value = resp
+        .json()
+        .context("Failed to parse collaborators response")?;
 
     if !status.is_success() {
         let msg = body["message"].as_str().unwrap_or("Unknown error");
@@ -241,7 +248,10 @@ pub fn list_collaborators(token: &str) -> Result<Vec<Collaborator>> {
         .iter()
         .filter_map(|c| {
             let login = c["login"].as_str()?.to_string();
-            let role = c["role_name"].as_str().unwrap_or("collaborator").to_string();
+            let role = c["role_name"]
+                .as_str()
+                .unwrap_or("collaborator")
+                .to_string();
             Some(Collaborator { login, role })
         })
         .collect();
@@ -254,7 +264,10 @@ pub fn add_collaborator(token: &str, username: &str) -> Result<String> {
     let (owner, repo) = parse_repo_from_remote()?;
     let client = reqwest::blocking::Client::new();
     let resp = client
-        .put(format!("https://api.github.com/repos/{}/{}/collaborators/{}", owner, repo, username))
+        .put(format!(
+            "https://api.github.com/repos/{}/{}/collaborators/{}",
+            owner, repo, username
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "zit-cli")
         .header("Accept", "application/vnd.github+json")
@@ -277,7 +290,10 @@ pub fn remove_collaborator(token: &str, username: &str) -> Result<()> {
     let (owner, repo) = parse_repo_from_remote()?;
     let client = reqwest::blocking::Client::new();
     let resp = client
-        .delete(format!("https://api.github.com/repos/{}/{}/collaborators/{}", owner, repo, username))
+        .delete(format!(
+            "https://api.github.com/repos/{}/{}/collaborators/{}",
+            owner, repo, username
+        ))
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "zit-cli")
         .header("Accept", "application/vnd.github+json")
@@ -293,4 +309,3 @@ pub fn remove_collaborator(token: &str, username: &str) -> Result<()> {
         anyhow::bail!("{}", msg)
     }
 }
-

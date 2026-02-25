@@ -77,9 +77,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Title
-            Constraint::Length(3),  // Branch info
-            Constraint::Length(3),  // File counts
+            Constraint::Length(3), // Title
+            Constraint::Length(3), // Branch info
+            Constraint::Length(3), // File counts
             Constraint::Min(5),    // Recent commits
             Constraint::Length(3), // Keybindings
             Constraint::Length(1), // Status bar
@@ -88,59 +88,112 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
 
     // Title
     let title = Paragraph::new(Line::from(vec![
-        Span::styled("⚡ zit", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "⚡ zit",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" — Repository Dashboard"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(title, chunks[0]);
 
     // Branch info
     let status_icon = if state.is_clean { "✓" } else { "✗" };
-    let status_color = if state.is_clean { Color::Green } else { Color::Yellow };
+    let status_color = if state.is_clean {
+        Color::Green
+    } else {
+        Color::Yellow
+    };
 
     let mut branch_spans = vec![
         Span::styled("  Branch: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(&state.branch, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            &state.branch,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
     ];
 
     if state.ahead > 0 || state.behind > 0 {
         branch_spans.push(Span::raw("  "));
         if state.ahead > 0 {
-            branch_spans.push(Span::styled(format!("⬆{}", state.ahead), Style::default().fg(Color::Green)));
+            branch_spans.push(Span::styled(
+                format!("⬆{}", state.ahead),
+                Style::default().fg(Color::Green),
+            ));
             branch_spans.push(Span::raw(" "));
         }
         if state.behind > 0 {
-            branch_spans.push(Span::styled(format!("⬇{}", state.behind), Style::default().fg(Color::Red)));
+            branch_spans.push(Span::styled(
+                format!("⬇{}", state.behind),
+                Style::default().fg(Color::Red),
+            ));
         }
     }
 
     branch_spans.push(Span::raw("  │  "));
-    branch_spans.push(Span::styled(format!("{} {}", status_icon, if state.is_clean { "Clean" } else { "Dirty" }), Style::default().fg(status_color)));
+    branch_spans.push(Span::styled(
+        format!(
+            "{} {}",
+            status_icon,
+            if state.is_clean { "Clean" } else { "Dirty" }
+        ),
+        Style::default().fg(status_color),
+    ));
 
     if state.conflict_count > 0 {
         branch_spans.push(Span::raw("  "));
-        branch_spans.push(Span::styled(format!("⚠ {} conflicts", state.conflict_count), Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)));
+        branch_spans.push(Span::styled(
+            format!("⚠ {} conflicts", state.conflict_count),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
     }
 
-    let branch_info = Paragraph::new(Line::from(branch_spans))
-        .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    let branch_info = Paragraph::new(Line::from(branch_spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(branch_info, chunks[1]);
 
     // File counts
     let counts = Paragraph::new(Line::from(vec![
         Span::styled("  Staged: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{}", state.staged_count), Style::default().fg(Color::Green)),
+        Span::styled(
+            format!("{}", state.staged_count),
+            Style::default().fg(Color::Green),
+        ),
         Span::raw("  │  "),
         Span::styled("Unstaged: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{}", state.unstaged_count), Style::default().fg(Color::Yellow)),
+        Span::styled(
+            format!("{}", state.unstaged_count),
+            Style::default().fg(Color::Yellow),
+        ),
         Span::raw("  │  "),
         Span::styled("Untracked: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{}", state.untracked_count), Style::default().fg(Color::Gray)),
+        Span::styled(
+            format!("{}", state.untracked_count),
+            Style::default().fg(Color::Gray),
+        ),
         Span::raw("  │  "),
         Span::styled("Stash: ", Style::default().fg(Color::DarkGray)),
-        Span::styled(format!("{}", state.stash_count), Style::default().fg(Color::Magenta)),
+        Span::styled(
+            format!("{}", state.stash_count),
+            Style::default().fg(Color::Magenta),
+        ),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(counts, chunks[2]);
 
     // Recent commits
@@ -155,14 +208,20 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
             };
 
             if c.hash.is_empty() {
-                 return ListItem::new(Line::from(vec![graph_span]));
+                return ListItem::new(Line::from(vec![graph_span]));
             }
 
             ListItem::new(Line::from(vec![
                 graph_span,
-                Span::styled(format!("{} ", c.short_hash), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("{} ", c.short_hash),
+                    Style::default().fg(Color::Yellow),
+                ),
                 Span::styled(&c.message, Style::default().fg(Color::White)),
-                Span::styled(format!(" ({})", c.date), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!(" ({})", c.date),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]))
         })
         .collect();
@@ -178,7 +237,10 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
 
     let commits = commits.block(
         Block::default()
-            .title(Span::styled(" Recent Commits ", Style::default().fg(Color::White)))
+            .title(Span::styled(
+                " Recent Commits ",
+                Style::default().fg(Color::White),
+            ))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::DarkGray)),
     );
@@ -205,7 +267,11 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
         Span::styled("[q]", Style::default().fg(Color::Red)),
         Span::raw(" Quit"),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray)));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    );
     f.render_widget(keys, chunks[4]);
 
     // Status bar

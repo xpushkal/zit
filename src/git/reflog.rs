@@ -1,12 +1,12 @@
-use anyhow::Result;
 use super::runner::run_git;
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
 pub struct ReflogEntry {
     pub index: usize,
     pub hash: String,
     pub short_hash: String,
-    pub operation: String,   // commit, reset, checkout, merge, rebase, etc.
+    pub operation: String, // commit, reset, checkout, merge, rebase, etc.
     pub message: String,
     pub date: String,
 }
@@ -52,7 +52,11 @@ pub fn get_reflog(count: usize) -> Result<Vec<ReflogEntry>> {
 pub fn filter_reflog(entries: &[ReflogEntry], operation: &str) -> Vec<ReflogEntry> {
     entries
         .iter()
-        .filter(|e| e.operation.to_lowercase().contains(&operation.to_lowercase()))
+        .filter(|e| {
+            e.operation
+                .to_lowercase()
+                .contains(&operation.to_lowercase())
+        })
         .cloned()
         .collect()
 }

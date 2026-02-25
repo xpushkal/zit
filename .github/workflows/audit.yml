@@ -1,0 +1,33 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Every Monday at 8:00 UTC
+  push:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run audit
+        run: cargo audit
+
+  outdated:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+      - name: Check outdated
+        run: cargo outdated --exit-code 1 || true
