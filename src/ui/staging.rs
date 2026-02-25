@@ -231,6 +231,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
 pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
     // Collect a status message to set after releasing the staging_state borrow
     let mut status_msg: Option<String> = None;
+    let mut ai_error: Option<String> = None;
 
     {
         let state = &mut app.staging_state;
@@ -259,7 +260,9 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                         git::run_git(&["add", &file.path])
                     };
                     if let Err(e) = result {
-                        status_msg = Some(format!("Error: {}", e));
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Error: {}", err_str));
+                        ai_error = Some(err_str);
                     }
                     state.refresh();
                 }
@@ -268,7 +271,11 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 // Stage all
                 match git::run_git(&["add", "-A"]) {
                     Ok(_) => status_msg = Some("All files staged".to_string()),
-                    Err(e) => status_msg = Some(format!("Failed to stage: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Failed to stage: {}", err_str));
+                        ai_error = Some(err_str);
+                    }
                 }
                 state.refresh();
             }
@@ -276,7 +283,11 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 // Unstage all
                 match git::run_git(&["reset", "HEAD"]) {
                     Ok(_) => status_msg = Some("All files unstaged".to_string()),
-                    Err(e) => status_msg = Some(format!("Failed to unstage: {}", e)),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Failed to unstage: {}", err_str));
+                        ai_error = Some(err_str);
+                    }
                 }
                 state.refresh();
             }
@@ -316,6 +327,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
 
     if let Some(msg) = status_msg {
         app.set_status(&msg);
+    }
+
+    if let Some(err) = ai_error {
+        app.start_ai_error_explain(err);
     }
 
     Ok(())

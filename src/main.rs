@@ -1,3 +1,4 @@
+mod ai;
 mod app;
 mod config;
 mod event;
@@ -74,9 +75,11 @@ fn run_app(
         // Handle events
         match events.next()? {
             AppEvent::Key(key) => {
+                app.poll_ai_result();
                 app.handle_key(key)?;
             }
             AppEvent::Tick => {
+                app.poll_ai_result();
                 // Auto-refresh on tick (only for dashboard)
                 if app.view == View::Dashboard {
                     app.dashboard_state.refresh();
@@ -126,6 +129,11 @@ fn draw(f: &mut Frame, app: &mut App) {
         View::GitHub => {
             let config = app.config.clone();
             ui::github::render(f, area, &mut app.github_state, &config);
+        }
+        View::AiMentor => {
+            let ai_available = app.ai_client.is_some();
+            let loading = app.ai_loading;
+            ui::ai_mentor::render(f, area, &app.ai_mentor_state, ai_available, loading);
         }
     }
 

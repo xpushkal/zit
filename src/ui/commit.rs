@@ -43,7 +43,7 @@ impl CommitState {
         self.validate();
     }
 
-    fn validate(&mut self) {
+    pub fn validate(&mut self) {
         self.validation_warnings.clear();
 
         if self.message.is_empty() {
@@ -203,7 +203,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
         Span::styled("Esc", Style::default().fg(Color::Cyan)),
         Span::raw(" Cancel  "),
         Span::styled("Ctrl+A", Style::default().fg(Color::Cyan)),
-        Span::raw(" Amend"),
+        Span::raw(" Amend  "),
+        Span::styled("Ctrl+G", Style::default().fg(Color::Magenta)),
+        Span::raw(" AI Suggest"),
     ]));
 
     let hints = Paragraph::new(hint_lines).block(
@@ -215,17 +217,27 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
 }
 
 pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
-    let state = &mut app.commit_state;
-
-    if !state.editing {
+    if !app.commit_state.editing {
         match key.code {
             KeyCode::Char('i') | KeyCode::Enter => {
-                state.editing = true;
+                app.commit_state.editing = true;
             }
             _ => {}
         }
         return Ok(());
     }
+
+    // Handle AI suggestion outside the main match to avoid borrow conflicts
+    if key.code == KeyCode::Char('g')
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        app.start_ai_suggest();
+        return Ok(());
+    }
+
+    let state = &mut app.commit_state;
 
     match key.code {
         KeyCode::Esc => {

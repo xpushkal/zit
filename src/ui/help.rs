@@ -25,6 +25,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("t", "Open Time Travel view"),
             ("r", "Open Reflog view"),
             ("g", "Open GitHub view"),
+            ("a", "Open AI Mentor"),
             ("?", "Toggle this help"),
             ("q", "Quit"),
             ("Ctrl+C", "Force quit"),
@@ -44,6 +45,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("Enter", "New line"),
             ("Ctrl+S", "Submit commit"),
             ("Ctrl+A", "Amend previous commit"),
+            ("Ctrl+G", "Generate AI commit message"),
             ("Esc", "Stop editing / Back"),
         ],
         View::Branches => vec![
@@ -85,6 +87,13 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("a", "Add/update PAT"),
             ("q", "Back to Dashboard"),
         ],
+        View::AiMentor => vec![
+            ("↑/↓ or j/k", "Navigate menu"),
+            ("Enter", "Select / Submit"),
+            ("PgDn/PgUp", "Scroll result"),
+            ("Esc", "Back to menu"),
+            ("q", "Back to Dashboard"),
+        ],
     };
 
     let view_name = match current_view {
@@ -96,6 +105,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::TimeTravel => "Time Travel",
         View::Reflog => "Reflog",
         View::GitHub => "GitHub",
+        View::AiMentor => "AI Mentor",
     };
 
     let mut lines = vec![

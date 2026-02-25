@@ -1,3 +1,4 @@
+pub mod ai_mentor;
 pub mod branches;
 pub mod commit;
 pub mod dashboard;
