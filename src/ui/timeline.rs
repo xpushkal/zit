@@ -303,8 +303,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             if let Some(commit) = app.timeline_state.commits.get(selected) {
                 if !commit.hash.is_empty() {
                     let hash = commit.short_hash.clone();
-                    app.set_status(format!("Copied: {}", hash));
-                    // In a real app, integrate with a clipboard crate here
+                    match cli_clipboard::set_contents(hash.clone()) {
+                        Ok(()) => app.set_status(format!("✓ Copied to clipboard: {}", hash)),
+                        Err(_) => app.set_status(format!("Copied (display only): {}", hash)),
+                    }
                 }
             }
         }

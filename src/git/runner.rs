@@ -4,6 +4,7 @@ use std::process::Command;
 /// Execute a git command with the given arguments and return stdout.
 /// Fails with a descriptive error if the command exits non-zero.
 pub fn run_git(args: &[&str]) -> Result<String> {
+    log::debug!("git {}", args.join(" "));
     let output = Command::new("git")
         .args(args)
         .output()
@@ -11,6 +12,7 @@ pub fn run_git(args: &[&str]) -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        log::warn!("git {} failed: {}", args.join(" "), stderr.trim());
         bail!("git {} failed: {}", args.join(" "), stderr.trim());
     }
 

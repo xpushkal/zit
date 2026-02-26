@@ -285,4 +285,141 @@ mod tests {
         assert_eq!(untracked.len(), 1);
         assert_eq!(untracked[0].path, "untracked_file.txt");
     }
+
+    // ── char_to_status tests ────────────────────────────────────────
+    #[test]
+    fn test_char_to_status_modified() {
+        assert_eq!(char_to_status('M'), Some(FileStatus::Modified));
+    }
+
+    #[test]
+    fn test_char_to_status_added() {
+        assert_eq!(char_to_status('A'), Some(FileStatus::Added));
+    }
+
+    #[test]
+    fn test_char_to_status_deleted() {
+        assert_eq!(char_to_status('D'), Some(FileStatus::Deleted));
+    }
+
+    #[test]
+    fn test_char_to_status_renamed() {
+        assert_eq!(char_to_status('R'), Some(FileStatus::Renamed));
+    }
+
+    #[test]
+    fn test_char_to_status_copied() {
+        assert_eq!(char_to_status('C'), Some(FileStatus::Copied));
+    }
+
+    #[test]
+    fn test_char_to_status_conflicted() {
+        assert_eq!(char_to_status('U'), Some(FileStatus::Conflicted));
+    }
+
+    #[test]
+    fn test_char_to_status_dot_is_none() {
+        assert_eq!(char_to_status('.'), None);
+    }
+
+    #[test]
+    fn test_char_to_status_space_is_none() {
+        assert_eq!(char_to_status(' '), None);
+    }
+
+    #[test]
+    fn test_char_to_status_unknown_is_none() {
+        assert_eq!(char_to_status('Z'), None);
+    }
+
+    // ── RepoStatus::is_clean ────────────────────────────────────────
+    #[test]
+    fn test_repo_status_default_is_clean() {
+        let s = RepoStatus::default();
+        assert!(s.is_clean());
+    }
+
+    #[test]
+    fn test_repo_status_with_staged_not_clean() {
+        let mut s = RepoStatus::default();
+        s.staged.push(FileEntry {
+            status: FileStatus::Modified,
+            path: "test.rs".to_string(),
+            original_path: None,
+        });
+        assert!(!s.is_clean());
+    }
+
+    #[test]
+    fn test_repo_status_with_untracked_not_clean() {
+        let mut s = RepoStatus::default();
+        s.untracked.push(FileEntry {
+            status: FileStatus::Untracked,
+            path: "new.rs".to_string(),
+            original_path: None,
+        });
+        assert!(!s.is_clean());
+    }
+
+    #[test]
+    fn test_repo_status_with_conflicts_not_clean() {
+        let mut s = RepoStatus::default();
+        s.conflicts.push(FileEntry {
+            status: FileStatus::Conflicted,
+            path: "merge.rs".to_string(),
+            original_path: None,
+        });
+        assert!(!s.is_clean());
+    }
+
+    // ── parse_ordinary_entry conflict detection ─────────────────────
+    #[test]
+    fn test_parse_ordinary_entry_both_staged_and_unstaged() {
+        // XY=MM means both staged and unstaged modifications
+        let line = "1 MM N... 100644 100644 100644 abc123 def456 both.rs";
+        let mut staged = Vec::new();
+        let mut unstaged = Vec::new();
+        let mut conflicts = Vec::new();
+        parse_ordinary_entry(line, &mut staged, &mut unstaged, &mut conflicts);
+        assert_eq!(staged.len(), 1);
+        assert_eq!(unstaged.len(), 1);
+        assert_eq!(staged[0].path, "both.rs");
+        assert_eq!(unstaged[0].path, "both.rs");
+    }
+
+    #[test]
+    fn test_parse_ordinary_entry_conflicted() {
+        // XY=U. means conflicted in index
+        let line = "1 U. N... 100644 100644 100644 abc123 def456 conflict.rs";
+        let mut staged = Vec::new();
+        let mut unstaged = Vec::new();
+        let mut conflicts = Vec::new();
+        parse_ordinary_entry(line, &mut staged, &mut unstaged, &mut conflicts);
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].path, "conflict.rs");
+    }
+
+    // ── parse_rename_entry ──────────────────────────────────────────
+    #[test]
+    fn test_parse_rename_entry_basic() {
+        let line = "2 R. N... 100644 100644 100644 abc123 def456 R100 new.rs\told.rs";
+        let mut staged = Vec::new();
+        let mut unstaged = Vec::new();
+        parse_rename_entry(line, &mut staged, &mut unstaged);
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].status, FileStatus::Renamed);
+        assert_eq!(staged[0].path, "new.rs");
+        assert_eq!(staged[0].original_path, Some("old.rs".to_string()));
+    }
+
+    // ── RepoStatus defaults ─────────────────────────────────────────
+    #[test]
+    fn test_repo_status_default_branch() {
+        let s = RepoStatus::default();
+        assert_eq!(s.branch, "(unknown)");
+        assert!(s.upstream.is_none());
+        assert_eq!(s.ahead, 0);
+        assert_eq!(s.behind, 0);
+        assert_eq!(s.stash_count, 0);
+    }
 }

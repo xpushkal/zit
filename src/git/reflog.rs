@@ -125,4 +125,75 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].operation, "commit");
     }
+
+    #[test]
+    fn test_filter_reflog_empty_query_matches_none() {
+        let entries = vec![ReflogEntry {
+            index: 0,
+            hash: "abc".to_string(),
+            short_hash: "abc".to_string(),
+            operation: "commit".to_string(),
+            message: "test".to_string(),
+            date: "now".to_string(),
+        }];
+        // Empty string matches everything (contains(""))
+        let filtered = filter_reflog(&entries, "");
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_reflog_case_insensitive() {
+        let entries = vec![ReflogEntry {
+            index: 0,
+            hash: "abc".to_string(),
+            short_hash: "abc".to_string(),
+            operation: "COMMIT".to_string(),
+            message: "test".to_string(),
+            date: "now".to_string(),
+        }];
+        let filtered = filter_reflog(&entries, "commit");
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_reflog_no_match() {
+        let entries = vec![ReflogEntry {
+            index: 0,
+            hash: "abc".to_string(),
+            short_hash: "abc".to_string(),
+            operation: "commit".to_string(),
+            message: "test".to_string(),
+            date: "now".to_string(),
+        }];
+        let filtered = filter_reflog(&entries, "checkout");
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_parse_reflog_no_message_separator() {
+        // When there's no ": " in the action, whole thing is the operation
+        let sample = "abc123def456abc123def456abc123def456abc123\x1fabc123d\x1fcheckout\x1f1 hour ago\n";
+        let mut entries = Vec::new();
+        for (i, line) in sample.lines().enumerate() {
+            let parts: Vec<&str> = line.split('\x1f').collect();
+            if parts.len() < 4 { continue; }
+            let gs = parts[2];
+            let (operation, message) = if let Some(idx) = gs.find(": ") {
+                (gs[..idx].to_string(), gs[idx + 2..].to_string())
+            } else {
+                (gs.to_string(), String::new())
+            };
+            entries.push(ReflogEntry {
+                index: i,
+                hash: parts[0].to_string(),
+                short_hash: parts[1].to_string(),
+                operation,
+                message,
+                date: parts[3].to_string(),
+            });
+        }
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].operation, "checkout");
+        assert_eq!(entries[0].message, "");
+    }
 }

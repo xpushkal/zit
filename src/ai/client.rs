@@ -195,10 +195,16 @@ impl AiClient {
         // Check cache first
         let ckey = cache_key(request);
         if let Some(cached) = self.get_cached(&ckey) {
+            log::debug!("AI cache hit for type={}", request.request_type);
             return Ok(cached);
         }
 
         let request_id = Self::request_id();
+        log::info!(
+            "AI request: type={} id={}",
+            request.request_type,
+            request_id
+        );
         let mut last_error = None;
 
         for attempt in 0..=MAX_RETRIES {

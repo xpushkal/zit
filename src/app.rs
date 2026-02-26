@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use std::sync::mpsc;
 
 use crate::ai::client::AiClient;
@@ -827,5 +827,68 @@ impl App {
     #[allow(dead_code)]
     pub fn clear_status(&mut self) {
         self.status_message = None;
+    }
+
+    /// Handle mouse events (scroll wheel for list navigation).
+    pub fn handle_mouse(&mut self, mouse: MouseEvent) {
+        match mouse.kind {
+            MouseEventKind::ScrollDown => {
+                match self.view {
+                    View::Staging => {
+                        let len = self.staging_state.files.len();
+                        if len > 0 && self.staging_state.selected < len - 1 {
+                            self.staging_state.selected += 1;
+                            self.staging_state.list_state.select(Some(self.staging_state.selected));
+                        }
+                    }
+                    View::Timeline => {
+                        let len = self.timeline_state.commits.len();
+                        if len > 0 && self.timeline_state.selected < len - 1 {
+                            self.timeline_state.selected += 1;
+                        }
+                    }
+                    View::Branches => {
+                        let len = self.branches_state.branches.len();
+                        if len > 0 && self.branches_state.selected < len - 1 {
+                            self.branches_state.selected += 1;
+                        }
+                    }
+                    View::Reflog => {
+                        let len = self.reflog_state.entries.len();
+                        if len > 0 && self.reflog_state.selected < len - 1 {
+                            self.reflog_state.selected += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                match self.view {
+                    View::Staging => {
+                        if self.staging_state.selected > 0 {
+                            self.staging_state.selected -= 1;
+                            self.staging_state.list_state.select(Some(self.staging_state.selected));
+                        }
+                    }
+                    View::Timeline => {
+                        if self.timeline_state.selected > 0 {
+                            self.timeline_state.selected -= 1;
+                        }
+                    }
+                    View::Branches => {
+                        if self.branches_state.selected > 0 {
+                            self.branches_state.selected -= 1;
+                        }
+                    }
+                    View::Reflog => {
+                        if self.reflog_state.selected > 0 {
+                            self.reflog_state.selected -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
     }
 }
