@@ -370,7 +370,7 @@ impl AiClient {
         };
 
         let request = MentorRequest {
-            request_type: "explain".to_string(),
+            request_type: "review".to_string(),
             context: Some(context),
             query: Some(format!(
                 "Review the following diff for file '{}'. Identify potential issues, \
@@ -381,6 +381,18 @@ impl AiClient {
             error: None,
         };
 
+        self.call(&request)
+    }
+
+    /// Learn about a git topic with beginner-friendly explanations.
+    pub fn learn(&self, topic: &str) -> Result<String> {
+        let ctx = build_repo_context(false)?;
+        let request = MentorRequest {
+            request_type: "learn".to_string(),
+            context: Some(ctx),
+            query: Some(topic.to_string()),
+            error: None,
+        };
         self.call(&request)
     }
 

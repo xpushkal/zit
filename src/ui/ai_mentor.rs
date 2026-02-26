@@ -6,6 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
+use serde::{Deserialize, Serialize};
 
 /// The AI mentor panel mode.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -17,7 +18,7 @@ pub enum AiMode {
 }
 
 /// A single AI interaction entry for the prompt history.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiHistoryEntry {
     pub query: String,
     pub response: String,
@@ -26,6 +27,14 @@ pub struct AiHistoryEntry {
 
 /// Maximum history entries to keep.
 const MAX_HISTORY: usize = 50;
+
+/// Get the history file path (~/.config/zit/ai_history.json).
+fn history_path() -> std::path::PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("zit")
+        .join("ai_history.json")
+}
 
 /// State for the AI Mentor panel.
 pub struct AiMentorState {
@@ -42,6 +51,8 @@ pub struct AiMentorState {
 
 impl Default for AiMentorState {
     fn default() -> Self {
+        // Load persisted history
+        let history = Self::load_history();
         Self {
             mode: AiMode::Menu,
             selected: 0,
@@ -49,7 +60,7 @@ impl Default for AiMentorState {
             result_text: String::new(),
             result_scroll: 0,
             last_action: None,
-            history: Vec::new(),
+            history,
             history_selected: 0,
             history_scroll: 0,
         }
@@ -57,7 +68,30 @@ impl Default for AiMentorState {
 }
 
 impl AiMentorState {
-    /// Add a new entry to the prompt history.
+    /// Load history from disk. Returns empty vec on any error.
+    fn load_history() -> Vec<AiHistoryEntry> {
+        let path = history_path();
+        if !path.exists() {
+            return Vec::new();
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Save history to disk (best-effort, errors silently ignored).
+    fn save_history(&self) {
+        let path = history_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&self.history) {
+            let _ = std::fs::write(&path, json);
+        }
+    }
+
+    /// Add a new entry to the prompt history and persist to disk.
     pub fn add_history(&mut self, query: String, response: String) {
         let timestamp = {
             use std::time::SystemTime;
@@ -79,6 +113,8 @@ impl AiMentorState {
         if self.history.len() > MAX_HISTORY {
             self.history.remove(0);
         }
+        // Persist to disk
+        self.save_history();
     }
 }
 
@@ -89,6 +125,7 @@ const MENU_ITEMS: &[(&str, &str)] = &[
         "🛡️ Recommend",
         "Get a safe recommendation for a git operation",
     ),
+    ("📚 Learn", "Learn a git concept with examples"),
     ("🏥 Health Check", "Test connectivity to the AI service"),
     ("📜 History", "View past AI interactions"),
 ];
@@ -430,7 +467,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Enter => {
-            if app.ai_client.is_none() && app.ai_mentor_state.selected != 4 {
+            if app.ai_client.is_none() && app.ai_mentor_state.selected != 5 {
                 // Launch interactive AI setup wizard (except for history which doesn't need AI)
                 app.start_ai_setup();
                 return Ok(());
@@ -454,11 +491,17 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.ai_mentor_state.input.clear();
                 }
                 3 => {
+                    // Learn — needs input (topic)
+                    app.ai_mentor_state.last_action = Some("Learn".to_string());
+                    app.ai_mentor_state.mode = AiMode::Input;
+                    app.ai_mentor_state.input.clear();
+                }
+                4 => {
                     // Health check — fire directly
                     app.ai_mentor_state.last_action = Some("Health Check".to_string());
                     app.start_ai_query("health_check".to_string(), None);
                 }
-                4 => {
+                5 => {
                     // History — switch to history mode
                     app.ai_mentor_state.mode = AiMode::History;
                     app.ai_mentor_state.history_selected = 0;
@@ -486,6 +529,8 @@ fn handle_input_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<
 
             if action.contains("Recommend") {
                 app.start_ai_query("recommend".to_string(), Some(query));
+            } else if action.contains("Learn") {
+                app.start_ai_learn(query);
             } else {
                 // "Ask AI" — use the dedicated ask method
                 app.start_ai_ask(query);

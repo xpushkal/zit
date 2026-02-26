@@ -77,6 +77,7 @@ pub enum AiAction {
     HealthCheck,
     ReviewDiff(String), // file path being reviewed
     AskQuestion,
+    Learn,
 }
 
 pub struct App {
@@ -679,6 +680,33 @@ impl App {
         });
     }
 
+    /// Start an async AI learn query — non-blocking.
+    pub fn start_ai_learn(&mut self, topic: String) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already working...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured");
+                return;
+            }
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::Learn);
+        self.set_status("⏳ AI is teaching...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client.learn(&topic).map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
     /// Poll for an AI result (non-blocking). Call on every tick/key event.
     pub fn poll_ai_result(&mut self) {
         if let Some(ref rx) = self.ai_receiver {
@@ -747,11 +775,13 @@ impl App {
                         }
                         Some(AiAction::ExplainRepo)
                         | Some(AiAction::Recommend)
-                        | Some(AiAction::HealthCheck) => {
+                        | Some(AiAction::HealthCheck)
+                        | Some(AiAction::Learn) => {
                             let label = match &action {
                                 Some(AiAction::ExplainRepo) => "Explain Repo",
                                 Some(AiAction::Recommend) => "Recommend",
                                 Some(AiAction::HealthCheck) => "Health Check",
+                                Some(AiAction::Learn) => "Learn",
                                 _ => "AI Response",
                             };
                             self.ai_mentor_state.result_text = response.clone();
