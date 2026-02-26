@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Mentor panel** (`a` from dashboard) with four capabilities: Explain Repo, Ask a Question, Recommend, Health Check
+- **AI commit suggestions** via `Ctrl+G` in the Commit view — generates messages from staged diffs
+- **Auto error explainer** — AI automatically explains git failures (stage/unstage/reset/branch delete) with fix suggestions
+- **AI health check** endpoint and client method to verify backend connectivity
+- **Non-blocking AI calls** — all AI requests run in background threads via `mpsc` channels
+- **Retry with exponential backoff** — AI client retries transient failures (2 retries, 500ms/1s)
+- **Error classification** — distinguishes transient (5xx, timeout, DNS) from permanent (4xx) errors
+- **Diff truncation** — caps diff content at 4,000 chars to avoid token explosion
+- **Request body limit** — Lambda rejects requests > 128 KB
+- **Environment variable fallback** — `ZIT_AI_ENDPOINT` and `ZIT_AI_API_KEY` env vars as alternative to config file
+- **AWS Lambda backend** (Python 3.12) with Amazon Bedrock (Claude 3 Sonnet) integration
+- **SAM/CloudFormation template** with API Gateway, API key auth, usage plan (5,000 req/month)
+- **Lambda unit tests** — 27 tests covering request validation, responses, health check, CORS, prompts
+- **Lambda CI job** in GitHub Actions (`lambda-test` job, Python 3.12)
 - CI/CD pipeline with GitHub Actions (lint, test, build across Linux/macOS/Windows)
 - Automated release workflow with cross-compilation and GitHub Releases
 - Weekly security audit workflow (`cargo audit`)

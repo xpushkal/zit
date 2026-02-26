@@ -5,7 +5,7 @@ Globals:
   Function:
     Timeout: 60
     MemorySize: 512
-    Runtime: python3.11
+    Runtime: python3.12
     Tracing: Active
 Parameters:
   Environment:
@@ -39,13 +39,15 @@ Resources:
           Action:
           - bedrock:InvokeModel
           - bedrock:InvokeModelWithResponseStream
-          Resource: '*'
+          Resource:
+            Fn::Sub: arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}
         - Effect: Allow
           Action:
           - logs:CreateLogGroup
           - logs:CreateLogStream
           - logs:PutLogEvents
-          Resource: '*'
+          Resource:
+            Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
       Events:
         ApiEvent:
           Type: Api
@@ -112,3 +114,8 @@ Outputs:
     Description: Lambda Function Name
     Value:
       Ref: ZitAIMentorFunction
+  ApiKeyId:
+    Description: Retrieve your API key with this CLI command
+    Value:
+      Fn::Sub: aws apigateway get-api-keys --name-query zit-usage-plan-${Environment}
+        --include-values --query items[0].value --output text --region ${AWS::Region}

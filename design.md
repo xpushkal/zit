@@ -20,37 +20,34 @@ Zit is a terminal-based Git assistant built on three core principles: **safety b
 
 **ratatui + crossterm**: Industry-standard TUI framework with active maintenance, comprehensive widget library, and excellent terminal compatibility. crossterm provides cross-platform terminal manipulation.
 
-**clap**: Declarative CLI argument parsing with automatic help generation and shell completion support.
+**reqwest (blocking + rustls-tls)**: HTTP client for GitHub API and AI Lambda backend. Uses blocking mode with background `std::thread` spawning for non-blocking AI calls via `mpsc` channels.
 
-**reqwest**: Async HTTP client with TLS support for GitHub API and Lambda backend communication.
+**serde + serde_json + toml**: Serialization for GitHub API payloads, AI request/response, and TOML configuration files.
 
-**tokio**: Async runtime for concurrent Git command execution and non-blocking HTTP requests.
+**dirs**: Cross-platform config directory resolution (`~/.config/zit/`).
 
-**serde + serde_json**: Serialization for GitHub API payloads and configuration files.
+**anyhow**: Ergonomic error handling with context propagation.
 
-**keyring**: Cross-platform secure credential storage using OS-native keychains.
+**regex + unicode-width**: Log parsing and TUI text width calculations.
 
 ## High-Level Architecture
 
 ```mermaid
 graph TB
     subgraph "Zit Application (Rust)"
-        CLI[CLI Entry Point<br/>clap]
-        TUI[TUI Layer<br/>ratatui]
-        State[State Manager]
-        Git[Git Executor]
-        GitHub[GitHub Client<br/>reqwest]
-        AI[AI Client<br/>reqwest]
-        Config[Config Manager]
-        Keyring[Keyring Manager]
+        TUI[TUI Layer<br/>ratatui + crossterm]
+        State[App State Manager]
+        Git[Git Executor<br/>std::process::Command]
+        GitHub[GitHub Client<br/>reqwest blocking]
+        AI[AI Client<br/>reqwest blocking + mpsc]
+        Config[Config Manager<br/>toml + dirs]
     end
     
     subgraph "External Systems"
         GitCLI[Git CLI]
         GitHubAPI[GitHub REST API]
-        Lambda[AWS Lambda]
-        Bedrock[Amazon Bedrock]
-        OSKeychain[OS Keychain]
+        Lambda[AWS Lambda<br/>Python 3.12]
+        Bedrock[Amazon Bedrock<br/>Claude 3 Sonnet]
     end
     
     CLI --> TUI
@@ -91,15 +88,17 @@ graph TB
 6. Result propagates back to State Manager
 7. State Manager triggers TUI refresh
 
-**AI Guidance Flow**:
-1. User requests explanation or encounters error
-2. AI Client constructs request payload (metadata only)
-3. AI Client sends HTTPS request to Lambda
-4. Lambda invokes Bedrock with prompt
-5. Bedrock returns response
-6. Lambda validates and returns to AI Client
-7. AI Client displays response in TUI modal
-8. If Lambda unavailable, display fallback message
+**AI Guidance Flow** (implemented):
+1. User triggers AI action (Ctrl+G commit suggest, menu item in AI Mentor, or auto on git error)
+2. App spawns `std::thread` with cloned `AiClient`
+3. Thread calls AI method (with retry + exponential backoff)
+4. Result sent via `mpsc::Sender<String>`
+5. Main event loop calls `poll_ai_result()` on every tick/key event
+6. `AiAction` enum dispatches result to correct UI target:
+   - `CommitSuggest` → fills commit message input
+   - `ExplainRepo` / `Recommend` / `HealthCheck` → shows in AI Mentor result panel
+   - `ExplainError` → shows popup dialog
+7. If AI unavailable, static fallback status message is shown
 
 
 ## Components and Interfaces
@@ -393,81 +392,81 @@ pub enum GitHubError {
 
 ### 6. AI Client
 
-**Responsibility**: Send requests to Lambda backend, handle responses, implement fallbacks, cache responses.
+**Responsibility**: Send requests to Lambda backend, handle responses, implement retry logic, classify errors.
 
-**Interface**:
+**Implementation** (`src/ai/client.rs`):
 ```rust
-pub struct AIClient {
-    client: reqwest::Client,
+/// AI Mentor client that talks to the AWS Lambda backend.
+#[derive(Clone)]
+pub struct AiClient {
     endpoint: String,
-    cache: Arc<Mutex<HashMap<String, String>>>,
-    enabled: bool,
+    api_key: String,
+    client: reqwest::blocking::Client,
 }
 
-pub struct AIRequest {
-    pub query_type: QueryType,
-    pub context: serde_json::Value,
+pub struct MentorRequest {
+    pub request_type: String,        // "explain", "commit_suggestion", "error", "recommend"
+    pub context: Option<RepoContext>,
+    pub query: Option<String>,
+    pub error: Option<String>,
 }
 
-pub enum QueryType {
-    ExplainRepoState,
-    TranslateError,
-    SuggestCommitMessage,
-    ExplainCommit,
-    RecommendOperation,
+pub struct RepoContext {
+    pub branch: Option<String>,
+    pub staged_files: Vec<String>,
+    pub unstaged_files: Vec<String>,
+    pub diff_stats: Option<DiffStats>,
+    pub diff: Option<String>,
 }
 
-impl AIClient {
-    pub fn new(endpoint: String, enabled: bool) -> Self;
-    pub async fn query(&self, request: &AIRequest) -> Result<String>;
-    pub fn get_fallback(&self, query_type: &QueryType) -> String;
+/// AiAction tracks which AI operation is in flight (used by mpsc dispatch).
+pub enum AiAction {
+    CommitSuggest,
+    ExplainRepo,
+    ExplainError(String),
+    Recommend,
+    HealthCheck,
 }
-```
 
-**Request Payload Format**:
-```json
-{
-  "query_type": "explain_repo_state",
-  "context": {
-    "branch": "main",
-    "staged_count": 3,
-    "unstaged_count": 5,
-    "ahead": 2,
-    "behind": 0,
-    "conflicts": []
-  }
-}
-```
-
-**Response Format**:
-```json
-{
-  "explanation": "You're on the main branch with 3 staged changes...",
-  "suggestions": [
-    "Commit your staged changes",
-    "Review unstaged changes before staging"
-  ]
+impl AiClient {
+    pub fn from_config(config: &AiConfig) -> Option<Self>;
+    pub fn suggest_commit_message(&self) -> Result<String>;
+    pub fn explain_repo(&self, query: Option<&str>) -> Result<String>;
+    pub fn explain_error(&self, error_message: &str) -> Result<String>;
+    pub fn recommend(&self, query: &str) -> Result<String>;
+    pub fn health_check(&self) -> Result<String>;
 }
 ```
 
-**Caching Strategy**:
-- Cache key: Hash of request payload
-- TTL: 5 minutes for state explanations, 1 hour for error translations
-- Max cache size: 100 entries (LRU eviction)
-- Cache persists for session only (no disk storage)
+**Retry Strategy**:
+- `MAX_RETRIES = 2` (3 total attempts)
+- Exponential backoff: 500ms, 1s
+- Client errors (4xx) are **not** retried — they won't change
+- Server errors (5xx) and network errors **are** retried
 
-**Fallback Messages**:
-```rust
-fn get_fallback(&self, query_type: &QueryType) -> String {
-    match query_type {
-        QueryType::ExplainRepoState => 
-            "AI unavailable. Check status with 'git status'.",
-        QueryType::TranslateError => 
-            "AI unavailable. See Git documentation for error details.",
-        // ... other fallbacks
-    }
-}
+**Error Classification**:
+- `classify_request_error()`: Timeout, DNS, connection, TLS → transient
+- `classify_http_error()`: 401 (bad API key), 403 (forbidden), 413 (payload too large), 429 (rate limit), 502-504 (transient)
+
+**Non-Blocking Architecture**:
 ```
+User action → spawn background thread → AI call with retry → mpsc::channel → poll_ai_result()
+                                                                                   ↓
+                                                              AiAction dispatch → update UI
+```
+- `start_ai_suggest()`: Sets `AiAction::CommitSuggest`, fills commit message on result
+- `start_ai_query()`: Sets `AiAction::ExplainRepo|Recommend|HealthCheck`, shows in AI Mentor panel
+- `start_ai_error_explain()`: Sets `AiAction::ExplainError`, shows popup on result
+- `poll_ai_result()`: Called on every tick/key event, checks `mpsc::Receiver`
+
+**Request Limits**:
+- `DIFF_TRUNCATE_AT = 4000` chars — diffs are truncated to avoid token explosion
+- `MAX_REQUEST_BODY_SIZE = 128_000` bytes — Lambda rejects oversized requests
+
+**Configuration Resolution**:
+1. Config file (`~/.config/zit/config.toml`) `[ai]` section
+2. Environment variables `ZIT_AI_ENDPOINT` / `ZIT_AI_API_KEY` as fallback
+3. `AiConfig.enabled` must be `true` (or env vars present)
 
 
 ### 7. Config Manager
