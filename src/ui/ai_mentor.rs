@@ -13,7 +13,19 @@ pub enum AiMode {
     Menu,
     Input,
     Result,
+    History,
 }
+
+/// A single AI interaction entry for the prompt history.
+#[derive(Debug, Clone)]
+pub struct AiHistoryEntry {
+    pub query: String,
+    pub response: String,
+    pub timestamp: String,
+}
+
+/// Maximum history entries to keep.
+const MAX_HISTORY: usize = 50;
 
 /// State for the AI Mentor panel.
 pub struct AiMentorState {
@@ -23,6 +35,9 @@ pub struct AiMentorState {
     pub result_text: String,
     pub result_scroll: u16,
     pub last_action: Option<String>,
+    pub history: Vec<AiHistoryEntry>,
+    pub history_selected: usize,
+    pub history_scroll: u16,
 }
 
 impl Default for AiMentorState {
@@ -34,6 +49,35 @@ impl Default for AiMentorState {
             result_text: String::new(),
             result_scroll: 0,
             last_action: None,
+            history: Vec::new(),
+            history_selected: 0,
+            history_scroll: 0,
+        }
+    }
+}
+
+impl AiMentorState {
+    /// Add a new entry to the prompt history.
+    pub fn add_history(&mut self, query: String, response: String) {
+        let timestamp = {
+            use std::time::SystemTime;
+            let secs = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            // Simple HH:MM format from epoch seconds
+            let hours = (secs / 3600) % 24;
+            let mins = (secs / 60) % 60;
+            format!("{:02}:{:02}", hours, mins)
+        };
+        self.history.push(AiHistoryEntry {
+            query,
+            response,
+            timestamp,
+        });
+        // Trim old entries
+        if self.history.len() > MAX_HISTORY {
+            self.history.remove(0);
         }
     }
 }
@@ -46,6 +90,7 @@ const MENU_ITEMS: &[(&str, &str)] = &[
         "Get a safe recommendation for a git operation",
     ),
     ("🏥 Health Check", "Test connectivity to the AI service"),
+    ("📜 History", "View past AI interactions"),
 ];
 
 pub fn render(f: &mut Frame, area: Rect, state: &AiMentorState, ai_available: bool, loading: bool) {
@@ -89,6 +134,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &AiMentorState, ai_available: bo
         AiMode::Menu => render_menu(f, chunks[1], state, ai_available),
         AiMode::Input => render_input(f, chunks[1], state),
         AiMode::Result => render_result(f, chunks[1], state),
+        AiMode::History => render_history(f, chunks[1], state),
     }
 
     // Hints
@@ -112,6 +158,14 @@ pub fn render(f: &mut Frame, area: Rect, state: &AiMentorState, ai_available: bo
             Span::raw("Scroll  "),
             Span::styled("Esc ", Style::default().fg(Color::Red)),
             Span::raw("Back to menu"),
+        ]),
+        AiMode::History => Line::from(vec![
+            Span::styled(" ↑/↓ ", Style::default().fg(Color::Cyan)),
+            Span::raw("Navigate  "),
+            Span::styled("Enter ", Style::default().fg(Color::Cyan)),
+            Span::raw("View  "),
+            Span::styled("Esc ", Style::default().fg(Color::Red)),
+            Span::raw("Back"),
         ]),
     };
     let hints_widget = Paragraph::new(hints).block(
@@ -259,11 +313,107 @@ fn render_result(f: &mut Frame, area: Rect, state: &AiMentorState) {
     f.render_widget(result, area);
 }
 
+fn render_history(f: &mut Frame, area: Rect, state: &AiMentorState) {
+    if state.history.is_empty() {
+        let empty = Paragraph::new(vec![
+            Line::from(Span::raw("")),
+            Line::from(Span::styled(
+                "  No AI interactions yet.",
+                Style::default().fg(Color::DarkGray),
+            )),
+            Line::from(Span::raw("")),
+            Line::from(Span::styled(
+                "  Use the AI features and your history will appear here.",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " 📜 History ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(empty, area);
+        return;
+    }
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::raw("")));
+
+    for (i, entry) in state.history.iter().rev().enumerate() {
+        let is_selected = i == state.history_selected;
+        let arrow = if is_selected { "▶ " } else { "  " };
+        let style = if is_selected {
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", arrow),
+                Style::default().fg(if is_selected {
+                    Color::Cyan
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled(
+                format!("[{}] ", entry.timestamp),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                entry.query.chars().take(60).collect::<String>(),
+                style,
+            ),
+        ]));
+
+        // Show truncated response preview
+        let preview: String = entry
+            .response
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(50)
+            .collect();
+        lines.push(Line::from(Span::styled(
+            format!("       → {}...", preview),
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(Span::raw("")));
+    }
+
+    let history_widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    format!(" 📜 History ({} entries) ", state.history.len()),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .scroll((state.history_scroll, 0))
+        .wrap(Wrap { trim: false });
+    f.render_widget(history_widget, area);
+}
+
 pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
     match app.ai_mentor_state.mode {
         AiMode::Menu => handle_menu_key(app, key),
         AiMode::Input => handle_input_key(app, key),
         AiMode::Result => handle_result_key(app, key),
+        AiMode::History => handle_history_key(app, key),
     }
 }
 
@@ -280,8 +430,8 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Enter => {
-            if app.ai_client.is_none() {
-                // Launch interactive AI setup wizard
+            if app.ai_client.is_none() && app.ai_mentor_state.selected != 4 {
+                // Launch interactive AI setup wizard (except for history which doesn't need AI)
                 app.start_ai_setup();
                 return Ok(());
             }
@@ -308,6 +458,12 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.ai_mentor_state.last_action = Some("Health Check".to_string());
                     app.start_ai_query("health_check".to_string(), None);
                 }
+                4 => {
+                    // History — switch to history mode
+                    app.ai_mentor_state.mode = AiMode::History;
+                    app.ai_mentor_state.history_selected = 0;
+                    app.ai_mentor_state.history_scroll = 0;
+                }
                 _ => {}
             }
         }
@@ -328,13 +484,12 @@ fn handle_input_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<
             let query = app.ai_mentor_state.input.clone();
             let action = app.ai_mentor_state.last_action.clone().unwrap_or_default();
 
-            let action_type = if action.contains("Recommend") {
-                "recommend"
+            if action.contains("Recommend") {
+                app.start_ai_query("recommend".to_string(), Some(query));
             } else {
-                "explain_repo"
-            };
-
-            app.start_ai_query(action_type.to_string(), Some(query));
+                // "Ask AI" — use the dedicated ask method
+                app.start_ai_ask(query);
+            }
         }
         KeyCode::Char(c) => {
             if !key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -366,6 +521,51 @@ fn handle_result_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result
         }
         KeyCode::Up => {
             app.ai_mentor_state.result_scroll = app.ai_mentor_state.result_scroll.saturating_sub(1);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_history_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    let history_len = app.ai_mentor_state.history.len();
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.ai_mentor_state.mode = AiMode::Menu;
+            app.ai_mentor_state.history_scroll = 0;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.ai_mentor_state.history_selected > 0 {
+                app.ai_mentor_state.history_selected -= 1;
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if history_len > 0 && app.ai_mentor_state.history_selected + 1 < history_len {
+                app.ai_mentor_state.history_selected += 1;
+            }
+        }
+        KeyCode::Enter => {
+            // View selected history entry in the result view
+            if history_len > 0 {
+                let idx = history_len.saturating_sub(1) - app.ai_mentor_state.history_selected;
+                if let Some(entry) = app.ai_mentor_state.history.get(idx) {
+                    app.ai_mentor_state.result_text = format!(
+                        "── {} ──\n[{}]\n\n{}",
+                        entry.query, entry.timestamp, entry.response
+                    );
+                    app.ai_mentor_state.result_scroll = 0;
+                    app.ai_mentor_state.last_action = Some("History".to_string());
+                    app.ai_mentor_state.mode = AiMode::Result;
+                }
+            }
+        }
+        KeyCode::PageDown => {
+            app.ai_mentor_state.history_scroll =
+                app.ai_mentor_state.history_scroll.saturating_add(5);
+        }
+        KeyCode::PageUp => {
+            app.ai_mentor_state.history_scroll =
+                app.ai_mentor_state.history_scroll.saturating_sub(5);
         }
         _ => {}
     }

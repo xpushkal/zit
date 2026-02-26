@@ -75,6 +75,8 @@ pub enum AiAction {
     ExplainError(String),
     Recommend,
     HealthCheck,
+    ReviewDiff(String), // file path being reviewed
+    AskQuestion,
 }
 
 pub struct App {
@@ -104,13 +106,22 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> Self {
+        // Validate AI config and warn about issues
+        let ai_issues = config.ai.validate();
         let ai_client = AiClient::from_config(&config.ai);
+        let status_message = if !ai_issues.is_empty() {
+            Some(format!("⚠ AI config: {}", ai_issues[0]))
+        } else if config.ai.is_ready() && ai_client.is_some() {
+            Some("✓ AI Mentor ready".to_string())
+        } else {
+            None
+        };
         Self {
             running: true,
             view: View::Dashboard,
             popup: Popup::None,
             config,
-            status_message: None,
+            status_message,
             ai_client,
             ai_loading: false,
             ai_receiver: None,
@@ -607,6 +618,67 @@ impl App {
         });
     }
 
+    /// Start an async AI diff review for a specific file — non-blocking.
+    pub fn start_ai_diff_review(&mut self, file_path: String, diff_content: String) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already working...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured — press 'a' to open AI Mentor and set up");
+                return;
+            }
+        };
+
+        if diff_content.trim().is_empty() {
+            self.set_status("No diff content to review");
+            return;
+        }
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::ReviewDiff(file_path.clone()));
+        self.set_status(format!("⏳ AI reviewing diff for {}...", file_path));
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client
+                .review_diff(&file_path, &diff_content)
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Start an async AI free-form question — non-blocking.
+    pub fn start_ai_ask(&mut self, question: String) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already working...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured");
+                return;
+            }
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::AskQuestion);
+        self.set_status("⏳ Asking AI mentor...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client.ask(&question).map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
     /// Poll for an AI result (non-blocking). Call on every tick/key event.
     pub fn poll_ai_result(&mut self) {
         if let Some(ref rx) = self.ai_receiver {
@@ -623,6 +695,11 @@ impl App {
                             self.set_status(
                                 "✓ AI suggestion loaded — edit or press Enter to commit",
                             );
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                "Commit Suggestion".to_string(),
+                                response.trim().to_string(),
+                            );
                         }
                         Some(AiAction::ExplainError(original_err)) => {
                             let msg = format!(
@@ -634,14 +711,58 @@ impl App {
                                 message: msg,
                             };
                             self.set_status("✓ AI explanation ready");
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                format!("Error: {}", &original_err[..original_err.len().min(50)]),
+                                response.clone(),
+                            );
+                        }
+                        Some(AiAction::ReviewDiff(file_path)) => {
+                            let msg = format!(
+                                "── AI Diff Review: {} ──\n\n{}",
+                                file_path, response
+                            );
+                            self.popup = Popup::Message {
+                                title: "🤖 AI Diff Review".to_string(),
+                                message: msg,
+                            };
+                            self.set_status("✓ AI diff review ready");
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                format!("Review: {}", file_path),
+                                response.clone(),
+                            );
+                        }
+                        Some(AiAction::AskQuestion) => {
+                            self.ai_mentor_state.result_text = response.clone();
+                            self.ai_mentor_state.result_scroll = 0;
+                            self.ai_mentor_state.mode = ai_mentor::AiMode::Result;
+                            self.set_status("✓ AI response ready");
+                            // Store in history
+                            let query = self.ai_mentor_state.input.clone();
+                            self.ai_mentor_state.add_history(
+                                if query.is_empty() { "Question".to_string() } else { query },
+                                response,
+                            );
                         }
                         Some(AiAction::ExplainRepo)
                         | Some(AiAction::Recommend)
                         | Some(AiAction::HealthCheck) => {
-                            self.ai_mentor_state.result_text = response;
+                            let label = match &action {
+                                Some(AiAction::ExplainRepo) => "Explain Repo",
+                                Some(AiAction::Recommend) => "Recommend",
+                                Some(AiAction::HealthCheck) => "Health Check",
+                                _ => "AI Response",
+                            };
+                            self.ai_mentor_state.result_text = response.clone();
                             self.ai_mentor_state.result_scroll = 0;
                             self.ai_mentor_state.mode = ai_mentor::AiMode::Result;
                             self.set_status("✓ AI response ready");
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                label.to_string(),
+                                response,
+                            );
                         }
                         None => {
                             self.set_status(format!("AI: {}", response));

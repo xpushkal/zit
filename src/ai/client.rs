@@ -2,6 +2,9 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::config::AiConfig;
 use crate::git;
@@ -13,6 +16,12 @@ const MAX_RETRIES: u32 = 2;
 
 /// Maximum diff content included in context (chars). Truncated beyond this.
 const DIFF_TRUNCATE_AT: usize = 4000;
+
+/// Cache TTL — responses are cached for 5 minutes.
+const CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Maximum cached entries before eviction.
+const CACHE_MAX_ENTRIES: usize = 50;
 
 // ─── Request / Response Types ──────────────────────────────────
 
@@ -66,6 +75,33 @@ pub struct MentorResponseData {
     pub content: Option<String>,
 }
 
+// ─── Cache ─────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct CacheEntry {
+    response: String,
+    created: Instant,
+}
+
+type ResponseCache = Arc<Mutex<HashMap<String, CacheEntry>>>;
+
+/// Compute a simple hash key for a request (type + query + error + branch).
+fn cache_key(request: &MentorRequest) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    request.request_type.hash(&mut hasher);
+    request.query.hash(&mut hasher);
+    request.error.hash(&mut hasher);
+    if let Some(ref ctx) = request.context {
+        ctx.branch.hash(&mut hasher);
+        ctx.staged_files.hash(&mut hasher);
+        ctx.diff.hash(&mut hasher);
+    }
+    format!("{:x}", hasher.finish())
+}
+
 // ─── Client ────────────────────────────────────────────────────
 
 /// AI Mentor client that talks to the AWS Lambda backend.
@@ -74,6 +110,7 @@ pub struct AiClient {
     endpoint: String,
     api_key: String,
     client: reqwest::blocking::Client,
+    cache: ResponseCache,
 }
 
 impl AiClient {
@@ -86,10 +123,16 @@ impl AiClient {
         let endpoint = config.resolved_endpoint()?;
         let api_key = config.resolved_api_key()?;
 
+        // Validate endpoint URL format
+        if !endpoint.starts_with("https://") && !endpoint.starts_with("http://") {
+            return None;
+        }
+
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(
                 config.timeout_secs.unwrap_or(30),
             ))
+            .connect_timeout(std::time::Duration::from_secs(5))
             .build()
             .ok()?;
 
@@ -97,11 +140,65 @@ impl AiClient {
             endpoint,
             api_key,
             client,
+            cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    /// Send a request to the AI mentor API with retry and error classification.
+    /// Generate a unique request ID for tracing.
+    fn request_id() -> String {
+        use std::time::SystemTime;
+        let ts = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        format!("zit-{:x}", ts)
+    }
+
+    /// Look up a cached response. Returns None if not found or expired.
+    fn get_cached(&self, key: &str) -> Option<String> {
+        let cache = self.cache.lock().ok()?;
+        if let Some(entry) = cache.get(key) {
+            if entry.created.elapsed() < CACHE_TTL {
+                return Some(entry.response.clone());
+            }
+        }
+        None
+    }
+
+    /// Store a response in cache, evicting old entries if needed.
+    fn set_cached(&self, key: String, response: String) {
+        if let Ok(mut cache) = self.cache.lock() {
+            // Evict expired entries
+            cache.retain(|_, v| v.created.elapsed() < CACHE_TTL);
+            // Evict oldest if at capacity
+            if cache.len() >= CACHE_MAX_ENTRIES {
+                if let Some(oldest_key) = cache
+                    .iter()
+                    .min_by_key(|(_, v)| v.created)
+                    .map(|(k, _)| k.clone())
+                {
+                    cache.remove(&oldest_key);
+                }
+            }
+            cache.insert(
+                key,
+                CacheEntry {
+                    response,
+                    created: Instant::now(),
+                },
+            );
+        }
+    }
+
+    /// Send a request to the AI mentor API with caching, retry, and error classification.
     fn call(&self, request: &MentorRequest) -> Result<String> {
+        // Check cache first
+        let ckey = cache_key(request);
+        if let Some(cached) = self.get_cached(&ckey) {
+            return Ok(cached);
+        }
+
+        let request_id = Self::request_id();
         let mut last_error = None;
 
         for attempt in 0..=MAX_RETRIES {
@@ -117,6 +214,7 @@ impl AiClient {
                 .post(&self.endpoint)
                 .header("Content-Type", "application/json")
                 .header("x-api-key", &self.api_key)
+                .header("x-request-id", &request_id)
                 .json(request)
                 .send();
 
@@ -135,10 +233,18 @@ impl AiClient {
                         continue;
                     }
 
-                    // Success — parse response
-                    return self.parse_success_response(resp);
+                    // Success — parse and cache
+                    let response = self.parse_success_response(resp)?;
+                    self.set_cached(ckey, response.clone());
+                    return Ok(response);
                 }
                 Err(e) => {
+                    // On first attempt, detect offline state
+                    if attempt == 0 && e.is_connect() {
+                        return Err(anyhow::anyhow!(
+                            "You appear to be offline — cannot reach AI service. Check your internet connection."
+                        ));
+                    }
                     last_error = Some(classify_request_error(e));
                     continue;
                 }
@@ -242,6 +348,58 @@ impl AiClient {
         } else {
             anyhow::bail!(classify_http_error(resp.status().as_u16()));
         }
+    }
+
+    /// Review a specific file's diff using AI. Returns review comments/suggestions.
+    pub fn review_diff(&self, file_path: &str, diff_content: &str) -> Result<String> {
+        let branch = git::branch::BranchOps::current().ok();
+
+        // Truncate diff if too long
+        let diff_text = if diff_content.len() > DIFF_TRUNCATE_AT {
+            format!("{}...(truncated)", &diff_content[..DIFF_TRUNCATE_AT])
+        } else {
+            diff_content.to_string()
+        };
+
+        let context = RepoContext {
+            branch,
+            staged_files: vec![file_path.to_string()],
+            unstaged_files: vec![],
+            diff_stats: None,
+            diff: Some(diff_text),
+        };
+
+        let request = MentorRequest {
+            request_type: "explain".to_string(),
+            context: Some(context),
+            query: Some(format!(
+                "Review the following diff for file '{}'. Identify potential issues, \
+                 suggest improvements, and highlight anything noteworthy. \
+                 Be concise and actionable.",
+                file_path
+            )),
+            error: None,
+        };
+
+        self.call(&request)
+    }
+
+    /// Ask a free-form question with full repo context.
+    pub fn ask(&self, question: &str) -> Result<String> {
+        let ctx = build_repo_context(false)?;
+        let request = MentorRequest {
+            request_type: "explain".to_string(),
+            context: Some(ctx),
+            query: Some(question.to_string()),
+            error: None,
+        };
+        self.call(&request)
+    }
+
+    /// Check if the client is configured and reachable (quick check, no API call).
+    #[allow(dead_code)]
+    pub fn is_configured(&self) -> bool {
+        !self.endpoint.is_empty() && !self.api_key.is_empty()
     }
 }
 

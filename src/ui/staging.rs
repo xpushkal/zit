@@ -232,6 +232,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
     // Collect a status message to set after releasing the staging_state borrow
     let mut status_msg: Option<String> = None;
     let mut ai_error: Option<String> = None;
+    let mut ai_review: Option<(String, String)> = None; // (file_path, diff_content)
 
     {
         let state = &mut app.staging_state;
@@ -278,6 +279,24 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                     }
                 }
                 state.refresh();
+            }
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                // AI diff review for selected file
+                if let Some(file) = state.files.get(state.selected) {
+                    if state.diff_lines.is_empty() {
+                        status_msg = Some("No diff available for this file".to_string());
+                    } else {
+                        let diff_content: String = state
+                            .diff_lines
+                            .iter()
+                            .map(|dl| dl.content.as_str())
+                            .collect::<Vec<&str>>()
+                            .join("\n");
+                        ai_review = Some((file.path.clone(), diff_content));
+                    }
+                } else {
+                    status_msg = Some("No file selected".to_string());
+                }
             }
             KeyCode::Char('u') => {
                 // Unstage all
@@ -332,6 +351,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
 
     if let Some(err) = ai_error {
         app.start_ai_error_explain(err);
+    }
+
+    if let Some((file_path, diff_content)) = ai_review {
+        app.start_ai_diff_review(file_path, diff_content);
     }
 
     Ok(())

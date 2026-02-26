@@ -118,6 +118,53 @@ impl AiConfig {
             .clone()
             .or_else(|| std::env::var("ZIT_AI_ENDPOINT").ok())
     }
+
+    /// Validate the AI configuration and return a list of issues (empty = valid).
+    pub fn validate(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+
+        if !self.enabled {
+            return issues; // Not enabled, nothing to validate
+        }
+
+        // Check endpoint
+        match self.resolved_endpoint() {
+            None => issues.push("AI endpoint not set — add 'endpoint' to [ai] config or set ZIT_AI_ENDPOINT".to_string()),
+            Some(ref url) => {
+                if !url.starts_with("https://") && !url.starts_with("http://") {
+                    issues.push(format!("AI endpoint must start with https:// or http://, got: {}", url));
+                }
+                if !url.contains('.') {
+                    issues.push("AI endpoint URL doesn't look like a valid domain".to_string());
+                }
+            }
+        }
+
+        // Check API key
+        if self.resolved_api_key().is_none() {
+            issues.push("AI API key not set — add 'api_key' to [ai] config or set ZIT_AI_API_KEY".to_string());
+        } else if let Some(ref key) = self.resolved_api_key() {
+            if key.len() < 8 {
+                issues.push("AI API key seems too short (< 8 chars)".to_string());
+            }
+        }
+
+        // Check timeout
+        if let Some(timeout) = self.timeout_secs {
+            if timeout == 0 {
+                issues.push("AI timeout_secs must be > 0".to_string());
+            } else if timeout > 120 {
+                issues.push("AI timeout_secs > 120s is unusually high — consider lowering".to_string());
+            }
+        }
+
+        issues
+    }
+
+    /// Check if AI is properly configured (enabled + endpoint + api_key).
+    pub fn is_ready(&self) -> bool {
+        self.enabled && self.resolved_endpoint().is_some() && self.resolved_api_key().is_some()
+    }
 }
 
 impl Config {
