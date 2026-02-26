@@ -24,7 +24,7 @@ def get_bedrock_client():
 MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
 MAX_DIFF_LENGTH = 4000  # Limit diff content to avoid token explosion
 MAX_REQUEST_BODY_SIZE = 128_000  # 128KB max request body
-VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn']
+VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn', 'review']
 
 
 def validate_request(body: dict) -> tuple:
@@ -124,6 +124,8 @@ def lambda_handler(event, context):
             response = handle_commit_suggestion(repo_context)
         elif request_type == 'learn':
             response = handle_learn(repo_context, user_query)
+        elif request_type == 'review':
+            response = handle_review(repo_context, user_query)
         else:
             response = handle_explain(repo_context, user_query)
         
@@ -322,4 +324,32 @@ Provide a beginner-friendly explanation with practical examples.
         'type': 'learning',
         'topic': topic,
         'content': explanation
+    }
+
+
+def handle_review(repo_context: dict, query: str) -> dict:
+    """Handle code diff review requests."""
+    system_prompt = get_system_prompt('review')
+    context_str = format_context(repo_context)
+    
+    diff_content = repo_context.get('diff', '')
+    staged_files = repo_context.get('staged_files', [])
+    
+    user_message = f"""
+Repository Context:
+{context_str}
+
+Files Under Review: {', '.join(staged_files) if staged_files else 'Unknown'}
+
+Diff Content:
+{diff_content[:MAX_DIFF_LENGTH] if diff_content else 'No diff provided'}
+
+{f"Reviewer Notes: {query}" if query else "Review this diff for issues and improvements."}
+"""
+    
+    review = invoke_bedrock_stream(system_prompt, user_message)
+    
+    return {
+        'type': 'review',
+        'content': review
     }

@@ -151,4 +151,41 @@ mod tests {
         assert_eq!(entries[0].hash, "");
         assert_eq!(entries[0].graph, "| \\ ");
     }
+
+    #[test]
+    fn test_parse_empty_output() {
+        let entries = parse_log_output("");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_parse_multiple_commits() {
+        let line1 = "* abc123def456abc123def456abc123def456abc1\x1fabc123d\x1ffeat: first\x1fAlice\x1f1 hour ago\x1f2026-01-01T00:00:00+00:00\x1f\x1fHEAD -> main\n";
+        let line2 = "* def456abc123def456abc123def456abc123def4\x1fdef456a\x1ffix: second\x1fBob\x1f2 hours ago\x1f2026-01-01T00:00:00+00:00\x1f\x1f\n";
+        let sample = format!("{}{}", line1, line2);
+        let entries = parse_log_output(&sample);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].message, "feat: first");
+        assert_eq!(entries[1].message, "fix: second");
+        assert_eq!(entries[0].author, "Alice");
+        assert_eq!(entries[1].author, "Bob");
+    }
+
+    #[test]
+    fn test_parse_log_with_parents() {
+        // Commit with two parents (merge commit)
+        let sample = "* abc123def456abc123def456abc123def456abc1\x1fabc123d\x1fMerge branch dev\x1fAlice\x1f1 hour ago\x1f2026-01-01T00:00:00+00:00\x1fparent1 parent2\x1f\n";
+        let entries = parse_log_output(sample);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].parents.len(), 2);
+        assert_eq!(entries[0].parents[0], "parent1");
+        assert_eq!(entries[0].parents[1], "parent2");
+    }
+
+    #[test]
+    fn test_parse_log_blank_lines_ignored() {
+        let sample = "\n\n\n";
+        let entries = parse_log_output(sample);
+        assert!(entries.is_empty());
+    }
 }

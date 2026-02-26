@@ -23,7 +23,65 @@ use std::io;
 use app::{App, Popup, View};
 use event::{AppEvent, EventHandler};
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const PKG_NAME: &str = env!("CARGO_PKG_NAME");
+const PKG_DESC: &str = env!("CARGO_PKG_DESCRIPTION");
+
+fn print_help() {
+    println!("{} v{}", PKG_NAME, VERSION);
+    println!("{}", PKG_DESC);
+    println!();
+    println!("USAGE:");
+    println!("    zit [OPTIONS]");
+    println!();
+    println!("OPTIONS:");
+    println!("    -h, --help       Print this help message");
+    println!("    -v, --version    Print version information");
+    println!("    --verbose        Enable verbose logging (ZIT_LOG=debug)");
+    println!();
+    println!("ENVIRONMENT:");
+    println!("    ZIT_LOG          Set log level (error, warn, info, debug, trace)");
+    println!("    ZIT_AI_ENDPOINT  AI mentor API endpoint URL");
+    println!("    ZIT_AI_API_KEY   AI mentor API key");
+    println!();
+    println!("VIEWS:");
+    println!("    s  Staging     c  Commit      b  Branches");
+    println!("    l  Timeline    t  Time Travel  r  Reflog");
+    println!("    g  GitHub      a  AI Mentor    ?  Help");
+}
+
 fn main() -> Result<()> {
+    // Parse CLI flags
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    for arg in &args {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                print_help();
+                return Ok(());
+            }
+            "-v" | "--version" => {
+                println!("{} {}", PKG_NAME, VERSION);
+                return Ok(());
+            }
+            "--verbose" => {
+                std::env::set_var("ZIT_LOG", "debug");
+            }
+            other => {
+                eprintln!("Unknown option: {}", other);
+                eprintln!("Run 'zit --help' for usage.");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    // Initialize logging
+    env_logger::Builder::from_env(env_logger::Env::new().filter("ZIT_LOG"))
+        .format_timestamp(None)
+        .format_target(false)
+        .init();
+
+    log::info!("Starting {} v{}", PKG_NAME, VERSION);
+
     // Check if we're in a git repo
     if !git::runner::is_git_repo() {
         eprintln!(
@@ -34,12 +92,14 @@ fn main() -> Result<()> {
 
     // Load config
     let config = config::Config::load().unwrap_or_default();
+    log::debug!("Config loaded from {:?}", config::Config::path());
     let tick_rate = config.general.tick_rate_ms;
 
     // Setup terminal
     enable_raw_mode().context("Failed to enable raw mode")?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).context("Failed to enter alternate screen")?;
+    execute!(stdout, EnterAlternateScreen, crossterm::event::EnableMouseCapture)
+        .context("Failed to enter alternate screen")?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -52,7 +112,11 @@ fn main() -> Result<()> {
 
     // Restore terminal
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        crossterm::event::DisableMouseCapture
+    )?;
     terminal.show_cursor()?;
 
     if let Err(err) = res {
@@ -88,6 +152,10 @@ fn run_app(
                 if app.view == View::GitHub {
                     ui::github::tick_device_auth(app);
                 }
+            }
+            AppEvent::Mouse(mouse) => {
+                app.poll_ai_result();
+                app.handle_mouse(mouse);
             }
             AppEvent::Resize(_, _) => {
                 // Terminal will handle resize automatically

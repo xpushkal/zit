@@ -196,4 +196,102 @@ index abc123..def456 100644
         assert_eq!(ns, 1);
         assert_eq!(nc, 4);
     }
+
+    #[test]
+    fn test_parse_hunk_header_single_line() {
+        let (os, oc, ns, nc) = parse_hunk_header("@@ -10 +10 @@");
+        assert_eq!(os, 10);
+        assert_eq!(oc, 1); // default when no comma
+        assert_eq!(ns, 10);
+        assert_eq!(nc, 1);
+    }
+
+    #[test]
+    fn test_parse_empty_diff() {
+        let files = parse_diff_output("");
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_parse_diff_multiple_files() {
+        let sample = "\
+diff --git a/file1.rs b/file1.rs
+index abc..def 100644
+--- a/file1.rs
++++ b/file1.rs
+@@ -1,2 +1,2 @@
+-old1
++new1
+diff --git a/file2.rs b/file2.rs
+index 111..222 100644
+--- a/file2.rs
++++ b/file2.rs
+@@ -1,2 +1,3 @@
+ keep
+-remove
++add1
++add2
+";
+        let files = parse_diff_output(sample);
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].path, "file1.rs");
+        assert_eq!(files[1].path, "file2.rs");
+        assert_eq!(files[1].hunks.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_diff_rename() {
+        let sample = "\
+diff --git a/old_name.rs b/new_name.rs
+rename from old_name.rs
+rename to new_name.rs
+@@ -1,2 +1,2 @@
+-old
++new
+";
+        let files = parse_diff_output(sample);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new_name.rs");
+        assert_eq!(files[0].old_path, Some("old_name.rs".to_string()));
+    }
+
+    #[test]
+    fn test_diff_line_types_classified_correctly() {
+        let sample = "\
+diff --git a/t.rs b/t.rs
+index abc..def 100644
+--- a/t.rs
++++ b/t.rs
+@@ -1,3 +1,3 @@
+ context
+-removed
++added
+";
+        let files = parse_diff_output(sample);
+        let lines = &files[0].hunks[0].lines;
+        assert_eq!(lines[0].line_type, DiffLineType::Header); // @@ header
+        assert_eq!(lines[1].line_type, DiffLineType::Context); // " context"
+        assert_eq!(lines[2].line_type, DiffLineType::Removed); // "-removed"
+        assert_eq!(lines[3].line_type, DiffLineType::Added);   // "+added"
+    }
+
+    #[test]
+    fn test_parse_diff_multiple_hunks() {
+        let sample = "\
+diff --git a/f.rs b/f.rs
+index abc..def 100644
+--- a/f.rs
++++ b/f.rs
+@@ -1,2 +1,2 @@
+-a
++b
+@@ -10,2 +10,2 @@
+-c
++d
+";
+        let files = parse_diff_output(sample);
+        assert_eq!(files[0].hunks.len(), 2);
+        assert_eq!(files[0].hunks[0].old_start, 1);
+        assert_eq!(files[0].hunks[1].old_start, 10);
+    }
 }

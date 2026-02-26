@@ -35,6 +35,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("Space", "Toggle stage/unstage"),
             ("Ctrl+A", "Stage all files"),
             ("u", "Unstage all files"),
+            ("Ctrl+R", "AI diff review"),
             ("/", "Search files"),
             ("c", "Open Commit view"),
             ("PgDn/PgUp", "Scroll diff"),
