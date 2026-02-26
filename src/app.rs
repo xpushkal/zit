@@ -63,6 +63,8 @@ pub enum InputAction {
     CommitMessage,
     CreateRepo,
     AddCollaborator,
+    AiSetupEndpoint,
+    AiSetupApiKey,
 }
 
 /// Describes which AI action is in flight.
@@ -85,6 +87,8 @@ pub struct App {
     pub ai_loading: bool,
     ai_receiver: Option<mpsc::Receiver<Result<String, String>>>,
     ai_action: Option<AiAction>,
+    /// Temporary storage for AI setup wizard (endpoint from step 1).
+    ai_setup_endpoint: Option<String>,
 
     // View states
     pub dashboard_state: dashboard::DashboardState,
@@ -111,6 +115,7 @@ impl App {
             ai_loading: false,
             ai_receiver: None,
             ai_action: None,
+            ai_setup_endpoint: None,
             dashboard_state: dashboard::DashboardState::default(),
             staging_state: staging::StagingState::default(),
             commit_state: commit::CommitState::default(),
@@ -240,6 +245,7 @@ impl App {
                 KeyCode::Char('c') => {
                     self.view = View::Commit;
                     self.commit_state.refresh();
+                    self.auto_suggest_if_ready();
                     return Ok(());
                 }
                 KeyCode::Char('b') => {
@@ -375,7 +381,13 @@ impl App {
     }
 
     fn execute_input(&mut self, action: InputAction, value: String) -> Result<()> {
-        if value.trim().is_empty() {
+        // AI setup steps handle empty values themselves
+        if value.trim().is_empty()
+            && !matches!(
+                action,
+                InputAction::AiSetupEndpoint | InputAction::AiSetupApiKey
+            )
+        {
             return Ok(());
         }
 
@@ -434,8 +446,70 @@ impl App {
                     }
                 }
             }
+            InputAction::AiSetupEndpoint => {
+                // Step 1 complete — store endpoint, ask for API key
+                let endpoint = value.trim().to_string();
+                if endpoint.is_empty() {
+                    self.set_status("AI setup cancelled — endpoint is required");
+                    return Ok(());
+                }
+                self.ai_setup_endpoint = Some(endpoint);
+                self.popup = Popup::Input {
+                    title: "🤖 AI Setup (2/2)".to_string(),
+                    prompt: "API Key: ".to_string(),
+                    value: self.config.ai.resolved_api_key().unwrap_or_default(),
+                    on_submit: InputAction::AiSetupApiKey,
+                };
+            }
+            InputAction::AiSetupApiKey => {
+                // Step 2 complete — test + save
+                let api_key = value.trim().to_string();
+                let endpoint = self.ai_setup_endpoint.take().unwrap_or_default();
+                if api_key.is_empty() || endpoint.is_empty() {
+                    self.set_status("AI setup cancelled — endpoint and API key are required");
+                    return Ok(());
+                }
+                // Update config in memory
+                self.config.ai.enabled = true;
+                self.config.ai.endpoint = Some(endpoint);
+                self.config.ai.api_key = Some(api_key);
+                // Save to disk
+                match self.config.save() {
+                    Ok(()) => {},
+                    Err(e) => self.set_status(format!("⚠ Config in memory but save failed: {}", e)),
+                }
+                // Recreate AI client
+                self.ai_client = AiClient::from_config(&self.config.ai);
+                if self.ai_client.is_some() {
+                    self.set_status("✓ AI configured! Testing connection...");
+                    self.start_ai_query("health_check".to_string(), None);
+                } else {
+                    self.set_status("AI setup failed — could not create client");
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Launch the interactive AI setup wizard (2-step: endpoint → API key).
+    pub fn start_ai_setup(&mut self) {
+        self.popup = Popup::Input {
+            title: "🤖 AI Setup (1/2)".to_string(),
+            prompt: "API Endpoint URL: ".to_string(),
+            value: self.config.ai.resolved_endpoint().unwrap_or_default(),
+            on_submit: InputAction::AiSetupEndpoint,
+        };
+    }
+
+    /// Auto-suggest commit message if AI is available, message is empty, and files are staged.
+    pub fn auto_suggest_if_ready(&mut self) {
+        if self.ai_client.is_some()
+            && self.commit_state.message.is_empty()
+            && !self.commit_state.staged_files.is_empty()
+            && !self.ai_loading
+        {
+            self.start_ai_suggest();
+        }
     }
 
     /// Start an async AI commit message suggestion (non-blocking).

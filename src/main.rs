@@ -112,7 +112,9 @@ fn draw(f: &mut Frame, app: &mut App) {
             ui::staging::render(f, area, &mut app.staging_state);
         }
         View::Commit => {
-            ui::commit::render(f, area, &app.commit_state);
+            let ai_loading = app.ai_loading;
+            let ai_available = app.ai_client.is_some();
+            ui::commit::render(f, area, &app.commit_state, ai_loading, ai_available);
         }
         View::Branches => {
             ui::branches::render(f, area, &mut app.branches_state);

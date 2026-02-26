@@ -85,7 +85,7 @@ impl CommitState {
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
+pub fn render(f: &mut Frame, area: Rect, state: &CommitState, ai_loading: bool, ai_available: bool) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -97,6 +97,14 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
         .split(area);
 
     // Title
+    let ai_indicator = if ai_loading {
+        Span::styled("  ⏳ AI generating...", Style::default().fg(Color::Yellow))
+    } else if ai_available {
+        Span::styled("  🤖 AI ready", Style::default().fg(Color::Green))
+    } else {
+        Span::raw("")
+    };
+
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  ✏ ", Style::default().fg(Color::Green)),
         Span::styled(
@@ -109,6 +117,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
             format!("  ({} files staged)", state.staged_files.len()),
             Style::default().fg(Color::DarkGray),
         ),
+        ai_indicator,
     ]))
     .block(
         Block::default()
@@ -153,10 +162,17 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
         .collect();
 
     let lines = if lines.is_empty() {
-        vec![Line::from(Span::styled(
-            "Type your commit message...",
-            Style::default().fg(Color::DarkGray),
-        ))]
+        if ai_loading {
+            vec![Line::from(Span::styled(
+                "⏳ AI is generating a commit message...",
+                Style::default().fg(Color::Yellow),
+            ))]
+        } else {
+            vec![Line::from(Span::styled(
+                "Type your commit message... (Ctrl+G for AI suggestion)",
+                Style::default().fg(Color::DarkGray),
+            ))]
+        }
     } else {
         lines
     };
@@ -204,8 +220,18 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState) {
         Span::raw(" Cancel  "),
         Span::styled("Ctrl+A", Style::default().fg(Color::Cyan)),
         Span::raw(" Amend  "),
-        Span::styled("Ctrl+G", Style::default().fg(Color::Magenta)),
-        Span::raw(" AI Suggest"),
+        if ai_loading {
+            Span::styled("⏳ AI generating...", Style::default().fg(Color::Yellow))
+        } else if ai_available {
+            Span::styled("Ctrl+G", Style::default().fg(Color::Magenta))
+        } else {
+            Span::styled("Ctrl+G", Style::default().fg(Color::DarkGray))
+        },
+        if ai_loading {
+            Span::raw("")
+        } else {
+            Span::raw(" AI Suggest")
+        },
     ]));
 
     let hints = Paragraph::new(hint_lines).block(
@@ -233,7 +259,11 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             .modifiers
             .contains(crossterm::event::KeyModifiers::CONTROL)
     {
-        app.start_ai_suggest();
+        if app.ai_client.is_none() {
+            app.start_ai_setup();
+        } else {
+            app.start_ai_suggest();
+        }
         return Ok(());
     }
 

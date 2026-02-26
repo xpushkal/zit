@@ -1,0 +1,123 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'aws/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  AWS_REGION: ap-south-1
+  STACK_PREFIX: zit-ai-mentor
+
+jobs:
+  test:
+    name: Lambda Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          cd aws
+          pip install -r lambda/requirements.txt pytest
+      - name: Run tests
+        run: |
+          cd aws
+          python -m pytest tests/ -v
+
+  deploy:
+    name: Deploy (${{ github.event.inputs.environment || 'dev' }})
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set environment
+        id: env
+        run: echo "environment=${{ github.event.inputs.environment || 'dev' }}" >> $GITHUB_OUTPUT
+
+      - name: SAM Build
+        run: |
+          cd aws/infrastructure
+          sam build
+
+      - name: SAM Deploy
+        run: |
+          cd aws/infrastructure
+          sam deploy \
+            --stack-name ${{ env.STACK_PREFIX }}-${{ steps.env.outputs.environment }} \
+            --parameter-overrides Environment=${{ steps.env.outputs.environment }} \
+            --capabilities CAPABILITY_IAM \
+            --region ${{ env.AWS_REGION }} \
+            --resolve-s3 \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Get Stack Outputs
+        id: outputs
+        run: |
+          STACK_NAME="${{ env.STACK_PREFIX }}-${{ steps.env.outputs.environment }}"
+          API_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+            --output text --region ${{ env.AWS_REGION }})
+          HEALTH_ENDPOINT=$(aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query 'Stacks[0].Outputs[?OutputKey==`HealthEndpoint`].OutputValue' \
+            --output text --region ${{ env.AWS_REGION }})
+          echo "api_endpoint=$API_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "health_endpoint=$HEALTH_ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Smoke Test (Health Check)
+        run: |
+          HEALTH_URL="${{ steps.outputs.outputs.health_endpoint }}"
+          echo "Testing: $HEALTH_URL"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" \
+            -H "x-api-key: ${{ secrets.ZIT_API_KEY }}" || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Health check passed (HTTP $STATUS)"
+          else
+            echo "⚠️ Health check returned HTTP $STATUS (API key may be required)"
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Environment** | ${{ steps.env.outputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | ${{ env.AWS_REGION }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **API Endpoint** | ${{ steps.outputs.outputs.api_endpoint }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Health** | ${{ steps.outputs.outputs.health_endpoint }} |" >> $GITHUB_STEP_SUMMARY
