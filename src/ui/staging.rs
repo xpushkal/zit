@@ -321,6 +321,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
         KeyCode::Char('c') => {
             app.view = crate::app::View::Commit;
             app.commit_state.refresh();
+            app.auto_suggest_if_ready();
         }
         _ => {}
     }

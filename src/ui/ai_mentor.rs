@@ -281,7 +281,8 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
         }
         KeyCode::Enter => {
             if app.ai_client.is_none() {
-                app.set_status("AI not configured. Set [ai] in ~/.config/zit/config.toml");
+                // Launch interactive AI setup wizard
+                app.start_ai_setup();
                 return Ok(());
             }
             match app.ai_mentor_state.selected {
