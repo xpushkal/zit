@@ -2,20 +2,28 @@ import json
 import boto3
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from prompts import get_system_prompt, format_context
 
 # Setup logging
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
-# Initialize Bedrock client
-bedrock = boto3.client(
-    service_name='bedrock-runtime',
-    region_name=os.environ.get('AWS_REGION', 'ap-south-1')
-)
+# Initialize Bedrock client (lazy — created on first use to reduce cold start if health-checked)
+_bedrock_client = None
+
+def get_bedrock_client():
+    global _bedrock_client
+    if _bedrock_client is None:
+        _bedrock_client = boto3.client(
+            service_name='bedrock-runtime',
+            region_name=os.environ.get('AWS_REGION', 'ap-south-1')
+        )
+    return _bedrock_client
 
 MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
+MAX_DIFF_LENGTH = 4000  # Limit diff content to avoid token explosion
+MAX_REQUEST_BODY_SIZE = 128_000  # 128KB max request body
 VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn']
 
 
@@ -39,7 +47,7 @@ def build_response(status_code: int, success: bool, data: dict = None, error: st
     """Build standardized API response."""
     body = {
         'success': success,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'model': MODEL_ID
     }
     
@@ -80,11 +88,17 @@ def lambda_handler(event, context):
         if http_method == 'OPTIONS':
             return build_response(200, True, {'message': 'OK'})
         
+        # Check request body size
+        raw_body = event.get('body', '')
+        if isinstance(raw_body, str) and len(raw_body) > MAX_REQUEST_BODY_SIZE:
+            logger.warning(f"Request body too large: {len(raw_body)} bytes")
+            return build_response(413, False, error=f"Request body too large (max {MAX_REQUEST_BODY_SIZE // 1024}KB)")
+
         # Parse request body
-        if isinstance(event.get('body'), str):
-            body = json.loads(event['body'])
+        if isinstance(raw_body, str):
+            body = json.loads(raw_body)
         else:
-            body = event.get('body', event)
+            body = raw_body if raw_body else event
         
         logger.info(f"Request type: {body.get('type', 'explain')}")
         
@@ -129,6 +143,8 @@ def invoke_bedrock(system_prompt: str, user_message: str) -> str:
     """Invoke Amazon Bedrock with Claude model."""
     logger.info(f"Invoking Bedrock model: {MODEL_ID}")
     
+    client = get_bedrock_client()
+    
     request_body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1024,
@@ -142,7 +158,7 @@ def invoke_bedrock(system_prompt: str, user_message: str) -> str:
         ]
     }
     
-    response = bedrock.invoke_model(
+    response = client.invoke_model(
         modelId=MODEL_ID,
         contentType='application/json',
         accept='application/json',
@@ -162,6 +178,8 @@ def invoke_bedrock_stream(system_prompt: str, user_message: str) -> str:
     """Invoke Amazon Bedrock with streaming for faster first token."""
     logger.info(f"Invoking Bedrock model (streaming): {MODEL_ID}")
     
+    client = get_bedrock_client()
+    
     request_body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": 1024,
@@ -175,7 +193,7 @@ def invoke_bedrock_stream(system_prompt: str, user_message: str) -> str:
         ]
     }
     
-    response = bedrock.invoke_model_with_response_stream(
+    response = client.invoke_model_with_response_stream(
         modelId=MODEL_ID,
         contentType='application/json',
         accept='application/json',
@@ -271,7 +289,7 @@ Diff Statistics:
 - Files changed: {diff_stats.get('files_changed', len(staged_files))}
 - Insertions: {diff_stats.get('insertions', 0)}
 - Deletions: {diff_stats.get('deletions', 0)}
-{f"Diff Preview: {diff_content[:500]}..." if diff_content else ""}
+{f"Diff Preview: {diff_content[:MAX_DIFF_LENGTH]}..." if diff_content else ""}
 
 Suggest a concise, conventional commit message.
 """

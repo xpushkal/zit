@@ -291,12 +291,14 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 
 #### Technical Implementation
 
-* Lightweight backend on AWS Lambda
-* LLM access via Amazon Bedrock (Claude or GPT-4)
+* Serverless backend on AWS Lambda (Python 3.12)
+* LLM access via Amazon Bedrock (Claude 3 Sonnet)
+* API Gateway with API key auth + usage plan (5,000 req/month, 10 req/sec)
 * Context sent: repo state, command intent, relevant diffs, error messages
-* Responses cached for 5 minutes to reduce API calls
+* Non-blocking: AI calls run on a background thread via `mpsc::channel`
+* Automatic retry with exponential backoff (3 attempts)
 * Fallback to basic help text if AI unavailable
-* Privacy: only repo metadata sent, never full file contents unless user explicitly approves
+* Privacy: diffs truncated to 3,000 chars, response body capped at 5,000 chars
 
  **Acceptance Criteria** :
 
@@ -316,29 +318,38 @@ zit is not just a Git UI wrapper—it's a learning tool that:
  **Frontend (TUI Client)** :
 
 * **Language** : Rust (safety, performance, zero-cost abstractions)
-* **CLI Framework** : `clap` (argument parsing, subcommands, help generation)
-* **TUI Framework** : `ratatui` (rendering) + `crossterm` (terminal manipulation)
-* **Git Integration** : Shell-based execution of Git commands (source of truth)
-* **HTTP Client** : `reqwest` (GitHub API communication)
+* **TUI Framework** : `ratatui` 0.28 (rendering) + `crossterm` 0.28 (terminal manipulation)
+* **Git Integration** : Shell-based execution of Git commands via `std::process::Command` (source of truth)
+* **HTTP Client** : `reqwest` 0.12 (blocking + rustls-tls) for GitHub API and AI backend
+* **Serialization** : `serde` + `serde_json` + `toml` for API payloads and config
+* **Config** : `dirs` for cross-platform config directory, TOML format
+* **Error handling** : `anyhow` for ergonomic error propagation
 
  **Backend (AI Mentor)** :
 
 * **Platform** : AWS Lambda (serverless, pay-per-use)
-* **Runtime** : Python 3.11 or Node.js 20
-* **LLM Provider** : Amazon Bedrock (Claude Sonnet 4.5 or equivalent)
-* **API Gateway** : AWS API Gateway (RESTful endpoint)
-* **Authentication** : API key per user (generated on first use)
+* **Runtime** : Python 3.12
+* **LLM Provider** : Amazon Bedrock (Claude 3 Sonnet — `anthropic.claude-3-sonnet-20240229-v1:0`)
+* **API Gateway** : AWS API Gateway with API key auth + usage plan (5,000 req/month, 10 req/sec)
+* **Infrastructure** : AWS SAM / CloudFormation (one-command deploy via `deploy.sh`)
+* **Testing** : 27 Python unit tests, Lambda CI job in GitHub Actions
 
 ### Data Flow
 
 ```
-User Input → zit CLI → ratatui TUI → Git Commands (shell) → Parse Output → Update UI
-                                   ↓
-                          GitHub REST API (if applicable)
-                                   ↓
-                        AI Mentor API (if invoked)
-                                   ↓
-                     AWS Lambda → Bedrock LLM → Response → UI Display
+User Input → crossterm → ratatui TUI → Git Commands (shell) → Parse Output → Update UI
+                                     ↓
+                            GitHub REST API (if applicable)
+                                     ↓
+                          AI Mentor (if invoked)
+                          ┌──────────────────────────────────────┐
+                          │ spawn std::thread with AiClient      │
+                          │ → HTTPS POST to Lambda (with retry)  │
+                          │ → result via mpsc::channel           │
+                          │ → poll_ai_result() dispatches to UI  │
+                          └──────────────────────────────────────┘
+                                     ↓
+                     AWS Lambda (Python 3.12) → Bedrock Claude → Response
 ```
 
 ### Key Design Decisions

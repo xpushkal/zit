@@ -20,9 +20,19 @@ echo ""
 # Navigate to infrastructure directory
 cd infrastructure
 
-# Build with SAM
+# Build with SAM (use container if local Python doesn't match runtime)
 echo "📦 Building Lambda function..."
-sam build
+# Ensure Homebrew Python 3.12 is on PATH if installed
+if [[ -d "/opt/homebrew/opt/python@3.12/bin" ]]; then
+  export PATH="/opt/homebrew/opt/python@3.12/bin:$PATH"
+fi
+
+if command -v python3.12 &>/dev/null; then
+  sam build
+else
+  echo "   (using Docker container for python3.12 runtime)"
+  sam build --use-container
+fi
 
 # Deploy with SAM
 echo "☁️  Deploying to AWS..."
