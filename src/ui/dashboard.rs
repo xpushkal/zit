@@ -19,6 +19,7 @@ pub struct DashboardState {
     pub untracked_count: usize,
     pub conflict_count: usize,
     pub stash_count: u32,
+    pub commit_count: usize,
     pub is_clean: bool,
     pub recent_commits: Vec<git::CommitEntry>,
     pub error: Option<String>,
@@ -36,6 +37,7 @@ impl Default for DashboardState {
             untracked_count: 0,
             conflict_count: 0,
             stash_count: 0,
+            commit_count: 0,
             is_clean: true,
             recent_commits: Vec::new(),
             error: None,
@@ -70,6 +72,8 @@ impl DashboardState {
             Ok(commits) => self.recent_commits = commits,
             Err(_) => self.recent_commits = Vec::new(),
         }
+
+        self.commit_count = git::log::commit_count().unwrap_or(0);
     }
 }
 
@@ -187,6 +191,12 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
         Span::styled(
             format!("{}", state.stash_count),
             Style::default().fg(Color::Magenta),
+        ),
+        Span::raw("  │  "),
+        Span::styled("Commits: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{}", state.commit_count),
+            Style::default().fg(Color::Blue),
         ),
     ]))
     .block(

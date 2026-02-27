@@ -39,6 +39,7 @@ fn print_help() {
     println!("    -h, --help       Print this help message");
     println!("    -v, --version    Print version information");
     println!("    --verbose        Enable verbose logging (ZIT_LOG=debug)");
+    println!("    --no-ai          Disable AI features for this session");
     println!();
     println!("ENVIRONMENT:");
     println!("    ZIT_LOG          Set log level (error, warn, info, debug, trace)");
@@ -48,12 +49,14 @@ fn print_help() {
     println!("VIEWS:");
     println!("    s  Staging     c  Commit      b  Branches");
     println!("    l  Timeline    t  Time Travel  r  Reflog");
-    println!("    g  GitHub      a  AI Mentor    ?  Help");
+    println!("    g  GitHub      a  AI Mentor    x  Stash");
+    println!("    ?  Help");
 }
 
 fn main() -> Result<()> {
     // Parse CLI flags
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut no_ai = false;
     for arg in &args {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -66,6 +69,9 @@ fn main() -> Result<()> {
             }
             "--verbose" => {
                 std::env::set_var("ZIT_LOG", "debug");
+            }
+            "--no-ai" => {
+                no_ai = true;
             }
             other => {
                 eprintln!("Unknown option: {}", other);
@@ -91,9 +97,21 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
+    // Check git version meets minimum requirements
+    if let Err(e) = git::runner::check_git_version() {
+        eprintln!("Warning: {}", e);
+        eprintln!("Some features may not work correctly. Git ≥ 2.13.0 is required.");
+    }
+
     // Load config
     let mut config = config::Config::load().unwrap_or_default();
     log::debug!("Config loaded from {:?}", config::Config::path());
+
+    // Apply --no-ai flag
+    if no_ai {
+        config.ai.enabled = false;
+        log::info!("AI features disabled via --no-ai flag");
+    }
 
     // Migrate plaintext tokens to OS keychain (one-time)
     let migrated = keychain::migrate_from_config(&mut config);
@@ -156,10 +174,8 @@ fn run_app(
             }
             AppEvent::Tick => {
                 app.poll_ai_result();
-                // Auto-refresh on tick (only for dashboard)
-                if app.view == View::Dashboard {
-                    app.dashboard_state.refresh();
-                }
+                // Auto-refresh on tick for the current view
+                app.refresh();
                 // Poll GitHub Device Flow if active
                 if app.view == View::GitHub {
                     ui::github::tick_device_auth(app);
@@ -216,6 +232,9 @@ fn draw(f: &mut Frame, app: &mut App) {
             let ai_available = app.ai_client.is_some();
             let loading = app.ai_loading;
             ui::ai_mentor::render(f, area, &app.ai_mentor_state, ai_available, loading);
+        }
+        View::Stash => {
+            ui::stash::render(f, area, &mut app.stash_state);
         }
     }
 

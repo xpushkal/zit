@@ -61,11 +61,39 @@ pub fn is_git_repo() -> bool {
     run_git(&["rev-parse", "--is-inside-work-tree"]).is_ok()
 }
 
-/// Get the repository root path.
-#[allow(dead_code)]
-pub fn repo_root() -> Result<String> {
-    let out = run_git(&["rev-parse", "--show-toplevel"])?;
-    Ok(out.trim().to_string())
+/// Minimum git version required (porcelain v2 with --branch).
+const MIN_GIT_VERSION: (u32, u32, u32) = (2, 13, 0);
+
+/// Parse a version string like "git version 2.39.3 (Apple Git-146)" into (major, minor, patch).
+fn parse_git_version(version_str: &str) -> Option<(u32, u32, u32)> {
+    // Find the version number part (digits and dots after "git version ")
+    let version_part = version_str
+        .strip_prefix("git version ")
+        .unwrap_or(version_str)
+        .trim();
+    let mut parts = version_part.split(|c: char| !c.is_ascii_digit()).filter(|s| !s.is_empty());
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+/// Check that the installed git version meets the minimum requirement (≥ 2.13.0).
+/// Returns Ok(()) if the version is sufficient, or an error describing the problem.
+pub fn check_git_version() -> Result<()> {
+    let output = run_git(&["--version"])?;
+    let version = parse_git_version(output.trim())
+        .ok_or_else(|| anyhow::anyhow!("Could not parse git version from: {}", output.trim()))?;
+    let (min_major, min_minor, min_patch) = MIN_GIT_VERSION;
+    if version < (min_major, min_minor, min_patch) {
+        bail!(
+            "Git version {}.{}.{} is too old (minimum: {}.{}.{})",
+            version.0, version.1, version.2,
+            min_major, min_minor, min_patch
+        );
+    }
+    log::debug!("Git version {}.{}.{} OK", version.0, version.1, version.2);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -77,5 +105,34 @@ mod tests {
         let result = run_git(&["--version"]);
         assert!(result.is_ok());
         assert!(result.unwrap().starts_with("git version"));
+    }
+
+    #[test]
+    fn test_parse_git_version_standard() {
+        assert_eq!(parse_git_version("git version 2.39.3"), Some((2, 39, 3)));
+    }
+
+    #[test]
+    fn test_parse_git_version_apple() {
+        assert_eq!(
+            parse_git_version("git version 2.39.3 (Apple Git-146)"),
+            Some((2, 39, 3))
+        );
+    }
+
+    #[test]
+    fn test_parse_git_version_no_patch() {
+        assert_eq!(parse_git_version("git version 2.13"), Some((2, 13, 0)));
+    }
+
+    #[test]
+    fn test_parse_git_version_garbage() {
+        assert_eq!(parse_git_version("not a version"), None);
+    }
+
+    #[test]
+    fn test_check_git_version_passes() {
+        // The system git should be >= 2.13.0
+        assert!(check_git_version().is_ok());
     }
 }

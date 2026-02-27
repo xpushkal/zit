@@ -6,7 +6,7 @@ use crate::ai::client::AiClient;
 use crate::config::Config;
 use crate::git;
 use crate::ui::{
-    ai_mentor, branches, commit, dashboard, github, reflog, staging, time_travel, timeline,
+    ai_mentor, branches, commit, dashboard, github, reflog, staging, stash, time_travel, timeline,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,6 +20,7 @@ pub enum View {
     Reflog,
     GitHub,
     AiMentor,
+    Stash,
 }
 
 /// Popup dialog state.
@@ -51,6 +52,7 @@ pub enum ConfirmAction {
     MixedReset(String),
     SoftReset(String),
     RemoveCollaborator(String),
+    ClearStash,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +67,7 @@ pub enum InputAction {
     AddCollaborator,
     AiSetupEndpoint,
     AiSetupApiKey,
+    StashPush,
 }
 
 /// Describes which AI action is in flight.
@@ -103,6 +106,7 @@ pub struct App {
     pub reflog_state: reflog::ReflogState,
     pub github_state: github::GitHubState,
     pub ai_mentor_state: ai_mentor::AiMentorState,
+    pub stash_state: stash::StashState,
 }
 
 impl App {
@@ -137,11 +141,11 @@ impl App {
             reflog_state: reflog::ReflogState::default(),
             github_state: github::GitHubState::new(),
             ai_mentor_state: ai_mentor::AiMentorState::default(),
+            stash_state: stash::StashState::default(),
         }
     }
 
     /// Refresh data for the current view.
-    #[allow(dead_code)]
     pub fn refresh(&mut self) {
         match self.view {
             View::Dashboard => self.dashboard_state.refresh(),
@@ -153,6 +157,7 @@ impl App {
             View::Reflog => self.reflog_state.refresh(),
             View::GitHub => {}   // no auto-refresh for GitHub
             View::AiMentor => {} // no auto-refresh
+            View::Stash => self.stash_state.refresh(),
         }
     }
 
@@ -232,6 +237,7 @@ impl App {
                 } else {
                     self.view = View::Dashboard;
                     self.dashboard_state.refresh();
+                    self.clear_status();
                 }
                 return Ok(());
             }
@@ -288,6 +294,11 @@ impl App {
                     self.view = View::AiMentor;
                     return Ok(());
                 }
+                KeyCode::Char('x') => {
+                    self.view = View::Stash;
+                    self.stash_state.refresh();
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -303,6 +314,7 @@ impl App {
             View::Reflog => reflog::handle_key(self, key)?,
             View::GitHub => github::handle_key(self, key)?,
             View::AiMentor => ai_mentor::handle_key(self, key)?,
+            View::Stash => stash::handle_key(self, key)?,
         }
 
         Ok(())
@@ -388,6 +400,17 @@ impl App {
                     }
                 }
             }
+            ConfirmAction::ClearStash => {
+                match git::stash::stash_clear() {
+                    Ok(_) => self.status_message = Some("Cleared all stash entries".to_string()),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.status_message = Some(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
+                }
+                self.stash_state.refresh();
+            }
         }
         Ok(())
     }
@@ -397,7 +420,7 @@ impl App {
         if value.trim().is_empty()
             && !matches!(
                 action,
-                InputAction::AiSetupEndpoint | InputAction::AiSetupApiKey
+                InputAction::AiSetupEndpoint | InputAction::AiSetupApiKey | InputAction::StashPush
             )
         {
             return Ok(());
@@ -498,6 +521,25 @@ impl App {
                 } else {
                     self.set_status("AI setup failed — could not create client");
                 }
+            }
+            InputAction::StashPush => {
+                let msg = if value.trim().is_empty() {
+                    None
+                } else {
+                    Some(value.trim())
+                };
+                match git::stash::stash_push(msg) {
+                    Ok(_) => {
+                        let label = msg.unwrap_or("(default)");
+                        self.set_status(format!("Stashed changes: {}", label));
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.set_status(format!("Stash failed: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
+                }
+                self.stash_state.refresh();
             }
         }
         Ok(())
@@ -824,7 +866,6 @@ impl App {
     }
 
     /// Clear the status message.
-    #[allow(dead_code)]
     pub fn clear_status(&mut self) {
         self.status_message = None;
     }
@@ -859,6 +900,13 @@ impl App {
                             self.reflog_state.selected += 1;
                         }
                     }
+                    View::Stash => {
+                        let len = self.stash_state.entries.len();
+                        if len > 0 && self.stash_state.selected < len - 1 {
+                            self.stash_state.selected += 1;
+                            self.stash_state.list_state.select(Some(self.stash_state.selected));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -883,6 +931,12 @@ impl App {
                     View::Reflog => {
                         if self.reflog_state.selected > 0 {
                             self.reflog_state.selected -= 1;
+                        }
+                    }
+                    View::Stash => {
+                        if self.stash_state.selected > 0 {
+                            self.stash_state.selected -= 1;
+                            self.stash_state.list_state.select(Some(self.stash_state.selected));
                         }
                     }
                     _ => {}

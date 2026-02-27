@@ -415,7 +415,7 @@ impl AiClient {
     }
 
     /// Check if the client is configured and reachable (quick check, no API call).
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public utility — used in tests and available for consumers
     pub fn is_configured(&self) -> bool {
         !self.endpoint.is_empty() && !self.api_key.is_empty()
     }
@@ -606,5 +606,214 @@ mod tests {
         assert!(json.contains("src/main.rs"));
         assert!(!json.contains("query")); // None fields should be skipped
         assert!(!json.contains("error"));
+    }
+
+    // ── cache_key tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_cache_key_deterministic() {
+        let req = MentorRequest {
+            request_type: "explain".to_string(),
+            context: None,
+            query: Some("hello".to_string()),
+            error: None,
+        };
+        let k1 = cache_key(&req);
+        let k2 = cache_key(&req);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn test_cache_key_differs_on_type() {
+        let r1 = MentorRequest {
+            request_type: "explain".to_string(),
+            context: None,
+            query: None,
+            error: None,
+        };
+        let r2 = MentorRequest {
+            request_type: "commit_suggestion".to_string(),
+            context: None,
+            query: None,
+            error: None,
+        };
+        assert_ne!(cache_key(&r1), cache_key(&r2));
+    }
+
+    #[test]
+    fn test_cache_key_differs_on_context_branch() {
+        let r1 = MentorRequest {
+            request_type: "explain".to_string(),
+            context: Some(RepoContext {
+                branch: Some("main".to_string()),
+                staged_files: vec![],
+                unstaged_files: vec![],
+                diff_stats: None,
+                diff: None,
+            }),
+            query: None,
+            error: None,
+        };
+        let r2 = MentorRequest {
+            request_type: "explain".to_string(),
+            context: Some(RepoContext {
+                branch: Some("feature".to_string()),
+                staged_files: vec![],
+                unstaged_files: vec![],
+                diff_stats: None,
+                diff: None,
+            }),
+            query: None,
+            error: None,
+        };
+        assert_ne!(cache_key(&r1), cache_key(&r2));
+    }
+
+    // ── Cache get/set tests ──────────────────────────────────────
+
+    fn make_test_client() -> AiClient {
+        AiClient {
+            endpoint: "https://example.com/mentor".to_string(),
+            api_key: "test-key".to_string(),
+            client: reqwest::blocking::Client::new(),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    #[test]
+    fn test_cache_miss_returns_none() {
+        let client = make_test_client();
+        assert!(client.get_cached("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_cache_hit_returns_value() {
+        let client = make_test_client();
+        client.set_cached("k1".to_string(), "response text".to_string());
+        assert_eq!(client.get_cached("k1"), Some("response text".to_string()));
+    }
+
+    #[test]
+    fn test_cache_evicts_at_capacity() {
+        let client = make_test_client();
+        // Fill cache to capacity
+        for i in 0..CACHE_MAX_ENTRIES {
+            client.set_cached(format!("k{}", i), format!("v{}", i));
+        }
+        // Adding one more should still work (oldest evicted)
+        client.set_cached("overflow".to_string(), "data".to_string());
+        let cache = client.cache.lock().unwrap();
+        assert!(cache.len() <= CACHE_MAX_ENTRIES);
+        assert!(cache.contains_key("overflow"));
+    }
+
+    // ── classify_http_error tests ────────────────────────────────
+
+    #[test]
+    fn test_classify_http_401() {
+        let msg = classify_http_error(401);
+        assert!(msg.contains("Invalid API key"));
+    }
+
+    #[test]
+    fn test_classify_http_403() {
+        let msg = classify_http_error(403);
+        assert!(msg.contains("Access denied"));
+    }
+
+    #[test]
+    fn test_classify_http_429() {
+        let msg = classify_http_error(429);
+        assert!(msg.contains("Rate limited"));
+    }
+
+    #[test]
+    fn test_classify_http_500() {
+        let msg = classify_http_error(500);
+        assert!(msg.contains("internal error"));
+    }
+
+    #[test]
+    fn test_classify_http_502() {
+        let msg = classify_http_error(502);
+        assert!(msg.contains("temporarily unavailable"));
+    }
+
+    #[test]
+    fn test_classify_http_unknown() {
+        let msg = classify_http_error(418);
+        assert!(msg.contains("418"));
+    }
+
+    // ── parse_success_response tests ─────────────────────────────
+
+    #[test]
+    fn test_response_deserialization_success() {
+        let json = r#"{"success": true, "response": {"type": "commit_suggestion", "content": "fix: typo"}}"#;
+        let resp: MentorApiResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.success);
+        assert_eq!(
+            resp.response.unwrap().content.unwrap(),
+            "fix: typo"
+        );
+    }
+
+    #[test]
+    fn test_response_deserialization_error() {
+        let json = r#"{"success": false, "error": "quota exceeded"}"#;
+        let resp: MentorApiResponse = serde_json::from_str(json).unwrap();
+        assert!(!resp.success);
+        assert_eq!(resp.error.unwrap(), "quota exceeded");
+    }
+
+    #[test]
+    fn test_response_deserialization_empty_content() {
+        let json = r#"{"success": true, "response": {"type": "explain"}}"#;
+        let resp: MentorApiResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.success);
+        assert!(resp.response.unwrap().content.is_none());
+    }
+
+    // ── from_config validation tests ─────────────────────────────
+
+    #[test]
+    fn test_from_config_disabled() {
+        let cfg = AiConfig {
+            enabled: false,
+            endpoint: Some("https://example.com/mentor".to_string()),
+            api_key: Some("key123".to_string()),
+            ..AiConfig::default()
+        };
+        assert!(AiClient::from_config(&cfg).is_none());
+    }
+
+    #[test]
+    fn test_from_config_bad_scheme_returns_none() {
+        let cfg = AiConfig {
+            enabled: true,
+            endpoint: Some("ftp://example.com/mentor".to_string()),
+            api_key: Some("key123".to_string()),
+            ..AiConfig::default()
+        };
+        assert!(AiClient::from_config(&cfg).is_none());
+    }
+
+    // ── is_configured tests ──────────────────────────────────────
+
+    #[test]
+    fn test_is_configured_true() {
+        let client = make_test_client();
+        assert!(client.is_configured());
+    }
+
+    // ── stat line edge cases ─────────────────────────────────────
+
+    #[test]
+    fn test_parse_stat_line_deletions_only() {
+        let stat = " 2 files changed, 5 deletions(-)";
+        let (f, i, d) = parse_stat_line(stat);
+        assert_eq!(f, 2);
+        assert_eq!(i, 0);
+        assert_eq!(d, 5);
     }
 }

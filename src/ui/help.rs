@@ -26,6 +26,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("r", "Open Reflog view"),
             ("g", "Open GitHub view"),
             ("a", "Open AI Mentor"),
+            ("x", "Open Stash view"),
             ("?", "Toggle this help"),
             ("q", "Quit"),
             ("Ctrl+C", "Force quit"),
@@ -96,6 +97,16 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("Esc", "Back to menu"),
             ("q", "Back to Dashboard"),
         ],
+        View::Stash => vec![
+            ("↑/↓ or j/k", "Navigate stash entries"),
+            ("p", "Pop stash (apply & remove)"),
+            ("a", "Apply stash (keep in list)"),
+            ("d", "Drop stash entry"),
+            ("n", "New stash (push)"),
+            ("D", "Clear all stashes"),
+            ("PgDn/PgUp", "Scroll diff"),
+            ("q", "Back to Dashboard"),
+        ],
     };
 
     let view_name = match current_view {
@@ -108,6 +119,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::Reflog => "Reflog",
         View::GitHub => "GitHub",
         View::AiMentor => "AI Mentor",
+        View::Stash => "Stash",
     };
 
     let mut lines = vec![

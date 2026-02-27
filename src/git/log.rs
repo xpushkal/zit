@@ -108,7 +108,6 @@ fn parse_log_output(output: &str) -> Vec<CommitEntry> {
 }
 
 /// Get the total number of commits in the current branch.
-#[allow(dead_code)]
 pub fn commit_count() -> Result<usize> {
     let output = run_git(&["rev-list", "--count", "HEAD"])?;
     Ok(output.trim().parse().unwrap_or(0))
