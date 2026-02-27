@@ -648,8 +648,9 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.github_state.view = GitHubView::Collaborators;
                 }
                 6 => {
-                    // Logout
+                    // Logout — clear keychain and config
                     if app.config.github.get_token().is_some() {
+                        crate::keychain::clear_all();
                         app.config.github.oauth_token = None;
                         app.config.github.pat = None;
                         app.config.github.username = None;
@@ -734,8 +735,11 @@ pub fn tick_device_auth(app: &mut crate::app::App) {
             // Fetch username
             let username = git::github_auth::get_username(&token.access_token).ok();
 
-            // Save token to config
-            app.config.github.oauth_token = Some(token.access_token);
+            // Store token in OS keychain (fall back to config if keychain fails)
+            if crate::keychain::store_github_token(&token.access_token).is_err() {
+                log::warn!("Keychain unavailable, storing token in config file");
+                app.config.github.oauth_token = Some(token.access_token);
+            }
             app.config.github.username = username.clone();
             let _ = app.config.save();
 
@@ -793,7 +797,7 @@ fn handle_create_repo_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::R
                 return Ok(());
             }
 
-            if let Some(token) = app.config.github.get_token().map(|t| t.to_string()) {
+            if let Some(token) = app.config.github.get_token() {
                 let desc = app.github_state.repo_desc.clone();
                 let private = app.github_state.repo_private;
                 match git::github_auth::create_repo(&token, &name, &desc, private) {
@@ -833,7 +837,7 @@ fn handle_create_repo_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::R
 }
 
 fn load_collaborators(app: &mut crate::app::App) {
-    if let Some(token) = app.config.github.get_token().map(|t| t.to_string()) {
+    if let Some(token) = app.config.github.get_token() {
         match git::github_auth::list_collaborators(&token) {
             Ok(collabs) => {
                 app.github_state.collaborators = collabs;
