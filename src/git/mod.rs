@@ -5,6 +5,7 @@ pub mod log;
 pub mod reflog;
 pub mod remote;
 pub mod runner;
+pub mod stash;
 pub mod status;
 
 pub use branch::{BranchEntry, BranchOps};

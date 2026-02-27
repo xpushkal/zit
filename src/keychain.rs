@@ -69,7 +69,7 @@ pub fn get_github_pat() -> Option<String> {
 }
 
 /// Delete the stored GitHub PAT.
-#[allow(dead_code)]
+#[allow(dead_code)] // Individual delete utility — bulk delete uses delete_secret directly
 pub fn delete_github_pat() {
     delete_secret(KEY_GITHUB_PAT);
 }
@@ -87,7 +87,7 @@ pub fn get_ai_api_key() -> Option<String> {
 }
 
 /// Delete the stored AI API key.
-#[allow(dead_code)]
+#[allow(dead_code)] // Individual delete utility — bulk delete uses delete_secret directly
 pub fn delete_ai_api_key() {
     delete_secret(KEY_AI_API_KEY);
 }

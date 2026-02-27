@@ -246,3 +246,92 @@ fn test_cli_not_git_repo() {
     assert!(stderr.contains("Not a git repository"));
     assert!(!output.status.success());
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// --no-ai flag test
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_cli_no_ai_flag_accepted() {
+    let output = Command::new(env!("CARGO_BIN_EXE_zit"))
+        .args(["--no-ai", "--help"])
+        .output()
+        .expect("failed to run zit");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("USAGE"));
+    assert!(output.status.success());
+}
+
+#[test]
+fn test_cli_help_shows_no_ai() {
+    let output = Command::new(env!("CARGO_BIN_EXE_zit"))
+        .arg("--help")
+        .output()
+        .expect("failed to run zit");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("--no-ai"));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Stash management tests
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_stash_pop_restores_changes() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("README.md"), "stash me\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "pop test"]);
+    // README should be back to original
+    let contents = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+    assert_eq!(contents, "# Test\n");
+    // Pop it
+    git(dir.path(), &["stash", "pop"]);
+    let contents = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+    assert_eq!(contents, "stash me\n");
+}
+
+#[test]
+fn test_stash_apply_keeps_entry() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("README.md"), "apply me\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "apply test"]);
+    git(dir.path(), &["stash", "apply"]);
+    // Stash should still exist
+    let list = git(dir.path(), &["stash", "list"]);
+    assert_eq!(list.lines().count(), 1);
+    // Changes should be restored
+    let contents = std::fs::read_to_string(dir.path().join("README.md")).unwrap();
+    assert_eq!(contents, "apply me\n");
+}
+
+#[test]
+fn test_stash_drop_removes_entry() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("README.md"), "drop me\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "drop test"]);
+    assert_eq!(git(dir.path(), &["stash", "list"]).lines().count(), 1);
+    git(dir.path(), &["stash", "drop", "stash@{0}"]);
+    assert_eq!(git(dir.path(), &["stash", "list"]).lines().count(), 0);
+}
+
+#[test]
+fn test_stash_show_has_diff() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("README.md"), "show me\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "show test"]);
+    let show = git(dir.path(), &["stash", "show", "-p", "stash@{0}"]);
+    assert!(show.contains("show me"));
+}
+
+#[test]
+fn test_stash_clear_removes_all() {
+    let dir = init_repo();
+    // Create two stashes
+    std::fs::write(dir.path().join("README.md"), "first\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "stash 1"]);
+    std::fs::write(dir.path().join("README.md"), "second\n").unwrap();
+    git(dir.path(), &["stash", "push", "-m", "stash 2"]);
+    assert_eq!(git(dir.path(), &["stash", "list"]).lines().count(), 2);
+    git(dir.path(), &["stash", "clear"]);
+    assert_eq!(git(dir.path(), &["stash", "list"]).lines().count(), 0);
+}

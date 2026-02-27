@@ -6,6 +6,7 @@ pub mod github;
 pub mod help;
 pub mod reflog;
 pub mod staging;
+pub mod stash;
 pub mod time_travel;
 pub mod timeline;
 pub mod utils;
