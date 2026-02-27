@@ -87,7 +87,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::GitHub => vec![
             ("↑/↓ or j/k", "Navigate menu"),
             ("Enter", "Select option"),
-            ("a", "Add/update PAT"),
+            ("a", "Login with GitHub"),
             ("q", "Back to Dashboard"),
         ],
         View::AiMentor => vec![

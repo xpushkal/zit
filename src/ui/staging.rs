@@ -16,36 +16,18 @@ pub struct StagingFile {
     pub is_staged: bool,
 }
 
+#[derive(Default)]
 pub struct StagingState {
     pub files: Vec<StagingFile>,
     pub selected: usize,
     pub list_state: ListState,
     pub filter: String,
-    #[allow(dead_code)]
-    pub show_diff: bool,
     pub diff_lines: Vec<git::DiffLine>,
     pub diff_scroll: u16,
     /// Hunk-level staging mode
     pub hunk_mode: bool,
     pub hunk_index: usize,
     pub file_hunks: Vec<git::diff::Hunk>,
-}
-
-impl Default for StagingState {
-    fn default() -> Self {
-        Self {
-            files: Vec::new(),
-            selected: 0,
-            list_state: ListState::default(),
-            filter: String::new(),
-            show_diff: true,
-            diff_lines: Vec::new(),
-            diff_scroll: 0,
-            hunk_mode: false,
-            hunk_index: 0,
-            file_hunks: Vec::new(),
-        }
-    }
 }
 
 impl StagingState {

@@ -11,8 +11,6 @@ use crate::git;
 
 pub struct CommitState {
     pub message: String,
-    #[allow(dead_code)]
-    pub cursor_pos: usize,
     pub staged_files: Vec<git::FileEntry>,
     pub stat_output: String,
     pub editing: bool,
@@ -23,7 +21,6 @@ impl Default for CommitState {
     fn default() -> Self {
         Self {
             message: String::new(),
-            cursor_pos: 0,
             staged_files: Vec::new(),
             stat_output: String::new(),
             editing: true,
@@ -344,4 +341,70 @@ fn do_commit(app: &mut crate::app::App) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn validate_msg(msg: &str) -> Vec<String> {
+        let mut state = CommitState::default();
+        state.message = msg.to_string();
+        state.validate();
+        state.validation_warnings
+    }
+
+    #[test]
+    fn test_validate_empty_message_no_warnings() {
+        assert!(validate_msg("").is_empty());
+    }
+
+    #[test]
+    fn test_validate_good_subject() {
+        assert!(validate_msg("Fix login bug").is_empty());
+    }
+
+    #[test]
+    fn test_validate_subject_too_long() {
+        let long = "a".repeat(73);
+        let warnings = validate_msg(&long);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("73 chars"));
+    }
+
+    #[test]
+    fn test_validate_subject_ends_with_period() {
+        let warnings = validate_msg("Fix the bug.");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("period"));
+    }
+
+    #[test]
+    fn test_validate_missing_blank_second_line() {
+        let warnings = validate_msg("Subject\nBody starts immediately");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("Line 2 should be blank"));
+    }
+
+    #[test]
+    fn test_validate_correct_multiline() {
+        let msg = "Subject line\n\nBody paragraph that explains\nthe change in detail.";
+        assert!(validate_msg(msg).is_empty());
+    }
+
+    #[test]
+    fn test_validate_body_line_too_long() {
+        let long_body = format!("Subject\n\n{}", "x".repeat(81));
+        let warnings = validate_msg(&long_body);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("81 chars"));
+    }
+
+    #[test]
+    fn test_validate_multiple_warnings() {
+        // Subject ends with period AND body line too long
+        let msg = format!("Subject line.\n\n{}", "y".repeat(81));
+        let warnings = validate_msg(&msg);
+        assert_eq!(warnings.len(), 2);
+    }
 }

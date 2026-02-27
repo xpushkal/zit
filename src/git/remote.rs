@@ -1,12 +1,11 @@
 use super::runner::run_git;
 use anyhow::Result;
 
-#[allow(dead_code)]
 pub struct RemoteOps;
 
-#[allow(dead_code)]
 impl RemoteOps {
     /// List all remotes with their URLs.
+    #[allow(dead_code)]
     pub fn list() -> Result<Vec<(String, String)>> {
         let output = run_git(&["remote", "-v"])?;
         let mut remotes = Vec::new();
@@ -43,6 +42,7 @@ impl RemoteOps {
     }
 
     /// Fetch from a remote.
+    #[allow(dead_code)]
     pub fn fetch(remote: &str) -> Result<String> {
         run_git(&["fetch", remote])
     }
@@ -53,6 +53,7 @@ impl RemoteOps {
     }
 
     /// Pull from a remote, allowing unrelated histories (use with caution).
+    #[allow(dead_code)]
     pub fn pull_allow_unrelated(remote: &str, branch: &str) -> Result<String> {
         run_git(&[
             "pull",
@@ -64,6 +65,7 @@ impl RemoteOps {
     }
 
     /// Parse `git remote -v` output into (name, url) pairs, deduplicating.
+    #[allow(dead_code)]
     pub fn parse_remote_output(output: &str) -> Vec<(String, String)> {
         let mut remotes = Vec::new();
         let mut seen = std::collections::HashSet::new();
