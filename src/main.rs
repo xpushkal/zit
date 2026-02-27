@@ -3,6 +3,7 @@ mod app;
 mod config;
 mod event;
 mod git;
+mod keychain;
 mod ui;
 
 use anyhow::{Context, Result};
@@ -91,8 +92,19 @@ fn main() -> Result<()> {
     }
 
     // Load config
-    let config = config::Config::load().unwrap_or_default();
+    let mut config = config::Config::load().unwrap_or_default();
     log::debug!("Config loaded from {:?}", config::Config::path());
+
+    // Migrate plaintext tokens to OS keychain (one-time)
+    let migrated = keychain::migrate_from_config(&mut config);
+    if migrated > 0 {
+        if let Err(e) = config.save() {
+            log::warn!("Failed to save config after keychain migration: {}", e);
+        } else {
+            log::info!("Migrated {} secret(s) from config to OS keychain", migrated);
+        }
+    }
+
     let tick_rate = config.general.tick_rate_ms;
 
     // Setup terminal

@@ -25,6 +25,10 @@ pub struct StagingState {
     pub show_diff: bool,
     pub diff_lines: Vec<git::DiffLine>,
     pub diff_scroll: u16,
+    /// Hunk-level staging mode
+    pub hunk_mode: bool,
+    pub hunk_index: usize,
+    pub file_hunks: Vec<git::diff::Hunk>,
 }
 
 impl Default for StagingState {
@@ -37,6 +41,9 @@ impl Default for StagingState {
             show_diff: true,
             diff_lines: Vec::new(),
             diff_scroll: 0,
+            hunk_mode: false,
+            hunk_index: 0,
+            file_hunks: Vec::new(),
         }
     }
 }
@@ -98,6 +105,8 @@ impl StagingState {
     fn update_diff(&mut self) {
         self.diff_lines.clear();
         self.diff_scroll = 0;
+        self.file_hunks.clear();
+        self.hunk_index = 0;
 
         if let Some(file) = self.files.get(self.selected) {
             let diffs = if file.is_staged {
@@ -107,11 +116,44 @@ impl StagingState {
             };
 
             if let Some(fd) = diffs.iter().find(|d| d.path == file.path) {
+                self.file_hunks = fd.hunks.clone();
                 for hunk in &fd.hunks {
                     self.diff_lines.extend(hunk.lines.clone());
                 }
             }
         }
+    }
+
+    /// Enter hunk mode for the currently selected file.
+    fn enter_hunk_mode(&mut self) {
+        if !self.file_hunks.is_empty() {
+            self.hunk_mode = true;
+            self.hunk_index = 0;
+            self.scroll_to_hunk();
+        }
+    }
+
+    /// Exit hunk mode.
+    fn exit_hunk_mode(&mut self) {
+        self.hunk_mode = false;
+        self.hunk_index = 0;
+        self.diff_scroll = 0;
+    }
+
+    /// Scroll the diff view so the current hunk header is visible.
+    fn scroll_to_hunk(&mut self) {
+        if self.hunk_index >= self.file_hunks.len() {
+            return;
+        }
+        // Count lines before the current hunk
+        let mut line_offset: u16 = 0;
+        for (i, hunk) in self.file_hunks.iter().enumerate() {
+            if i == self.hunk_index {
+                break;
+            }
+            line_offset += hunk.lines.len() as u16;
+        }
+        self.diff_scroll = line_offset;
     }
 }
 
@@ -209,7 +251,15 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut StagingState) {
         })
         .collect();
 
-    let diff_title = if let Some(file) = state.files.get(state.selected) {
+    let diff_title = if state.hunk_mode {
+        let total = state.file_hunks.len();
+        let current = state.hunk_index + 1;
+        if let Some(file) = state.files.get(state.selected) {
+            format!(" Hunk {}/{} — {} ", current, total, file.path)
+        } else {
+            format!(" Hunk {}/{} ", current, total)
+        }
+    } else if let Some(file) = state.files.get(state.selected) {
         format!(" Diff: {} ", file.path)
     } else {
         " Diff Preview ".to_string()
@@ -237,6 +287,64 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
     {
         let state = &mut app.staging_state;
 
+        // Hunk mode key handling
+        if state.hunk_mode {
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if state.hunk_index > 0 {
+                        state.hunk_index -= 1;
+                        state.scroll_to_hunk();
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if state.hunk_index + 1 < state.file_hunks.len() {
+                        state.hunk_index += 1;
+                        state.scroll_to_hunk();
+                    }
+                }
+                KeyCode::Char(' ') => {
+                    // Stage/unstage current hunk
+                    if let Some(file) = state.files.get(state.selected).cloned() {
+                        if let Some(hunk) = state.file_hunks.get(state.hunk_index).cloned() {
+                            let result = if file.is_staged {
+                                git::diff::unstage_hunk(&file.path, &hunk)
+                            } else {
+                                git::diff::stage_hunk(&file.path, &hunk)
+                            };
+                            match result {
+                                Ok(_) => {
+                                    let action = if file.is_staged { "Unstaged" } else { "Staged" };
+                                    status_msg = Some(format!("{} hunk {}", action, state.hunk_index + 1));
+                                }
+                                Err(e) => {
+                                    let err_str = e.to_string();
+                                    status_msg = Some(format!("Hunk error: {}", err_str));
+                                    ai_error = Some(err_str);
+                                }
+                            }
+                            state.refresh();
+                            // Stay in hunk mode if there are still hunks
+                            if state.file_hunks.is_empty() {
+                                state.exit_hunk_mode();
+                            } else if state.hunk_index >= state.file_hunks.len() {
+                                state.hunk_index = state.file_hunks.len() - 1;
+                                state.scroll_to_hunk();
+                            }
+                        }
+                    }
+                }
+                KeyCode::Esc | KeyCode::Char('h') => {
+                    state.exit_hunk_mode();
+                }
+                KeyCode::PageDown => {
+                    state.diff_scroll = state.diff_scroll.saturating_add(10);
+                }
+                KeyCode::PageUp => {
+                    state.diff_scroll = state.diff_scroll.saturating_sub(10);
+                }
+                _ => {}
+            }
+        } else {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 if state.selected > 0 {
@@ -313,6 +421,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             KeyCode::Char('/') => {
                 // handled below after borrow is released
             }
+            KeyCode::Char('h') => {
+                // Enter hunk mode
+                state.enter_hunk_mode();
+            }
             KeyCode::Char('c') => {
                 // handled below after borrow is released
             }
@@ -324,6 +436,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             }
             _ => {}
         }
+        } // close else block for non-hunk mode
     } // release mutable borrow of staging_state
 
     // Handle actions that need full App access (no staging_state borrow)

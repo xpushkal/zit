@@ -33,6 +33,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::Staging => vec![
             ("↑/↓ or j/k", "Navigate files"),
             ("Space", "Toggle stage/unstage"),
+            ("h", "Toggle hunk mode"),
             ("Ctrl+A", "Stage all files"),
             ("u", "Unstage all files"),
             ("Ctrl+R", "AI diff review"),

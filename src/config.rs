@@ -33,9 +33,19 @@ pub struct GithubConfig {
 }
 
 impl GithubConfig {
-    /// Get the best available token (OAuth preferred over PAT).
-    pub fn get_token(&self) -> Option<&str> {
-        self.oauth_token.as_deref().or(self.pat.as_deref())
+    /// Get the best available token: keychain first, then config file (OAuth preferred over PAT).
+    pub fn get_token(&self) -> Option<String> {
+        // Try OS keychain first
+        if let Some(token) = crate::keychain::get_github_token() {
+            return Some(token);
+        }
+        if let Some(token) = crate::keychain::get_github_pat() {
+            return Some(token);
+        }
+        // Fallback to plaintext config
+        self.oauth_token
+            .clone()
+            .or_else(|| self.pat.clone())
     }
 }
 
@@ -105,8 +115,13 @@ impl Default for AiConfig {
 }
 
 impl AiConfig {
-    /// Resolve API key: config file first, then ZIT_AI_API_KEY env var.
+    /// Resolve API key: keychain first, then config file, then ZIT_AI_API_KEY env var.
     pub fn resolved_api_key(&self) -> Option<String> {
+        // Try OS keychain first
+        if let Some(key) = crate::keychain::get_ai_api_key() {
+            return Some(key);
+        }
+        // Config file, then env var
         self.api_key
             .clone()
             .or_else(|| std::env::var("ZIT_AI_API_KEY").ok())
@@ -189,6 +204,7 @@ impl Config {
     }
 
     /// Save config to file, creating directories if needed.
+    /// On Unix, sets file permissions to 0o600 (owner-only read/write).
     pub fn save(&self) -> Result<()> {
         let path = Self::path();
         if let Some(parent) = path.parent() {
@@ -196,6 +212,15 @@ impl Config {
         }
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&path, content)?;
+
+        // Restrict permissions on Unix (config may contain tokens as fallback)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let perms = std::fs::Permissions::from_mode(0o600);
+            std::fs::set_permissions(&path, perms)?;
+        }
+
         Ok(())
     }
 }
@@ -378,7 +403,7 @@ mod tests {
             oauth_token: Some("oauth-token".to_string()),
             username: None,
         };
-        assert_eq!(g.get_token(), Some("oauth-token"));
+        assert_eq!(g.get_token(), Some("oauth-token".to_string()));
     }
 
     #[test]
@@ -388,7 +413,7 @@ mod tests {
             oauth_token: None,
             username: None,
         };
-        assert_eq!(g.get_token(), Some("pat-token"));
+        assert_eq!(g.get_token(), Some("pat-token".to_string()));
     }
 
     // ── Config serialization roundtrip ──────────────────────────────

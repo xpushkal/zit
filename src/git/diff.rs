@@ -1,5 +1,5 @@
 use super::runner::run_git;
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DiffLineType {
@@ -54,6 +54,86 @@ pub fn get_commit_diff(hash: &str) -> Result<Vec<FileDiff>> {
 /// Get diffstat for staged changes (for commit preview).
 pub fn get_staged_stat() -> Result<String> {
     run_git(&["diff", "--cached", "--stat"])
+}
+
+/// Stage a single hunk by constructing a minimal patch and piping it through `git apply --cached`.
+pub fn stage_hunk(file_path: &str, hunk: &Hunk) -> Result<()> {
+    let patch = build_hunk_patch(file_path, hunk);
+    apply_patch(&patch, true)
+}
+
+/// Unstage a single hunk via `git apply --cached -R` (reverse apply).
+pub fn unstage_hunk(file_path: &str, hunk: &Hunk) -> Result<()> {
+    let patch = build_hunk_patch(file_path, hunk);
+    apply_patch_reverse(&patch)
+}
+
+/// Build a minimal unified-diff patch for a single hunk.
+fn build_hunk_patch(file_path: &str, hunk: &Hunk) -> String {
+    let mut patch = String::new();
+    patch.push_str(&format!("--- a/{}\n", file_path));
+    patch.push_str(&format!("+++ b/{}\n", file_path));
+    for line in &hunk.lines {
+        patch.push_str(&line.content);
+        patch.push('\n');
+    }
+    patch
+}
+
+/// Apply a patch to the index.
+fn apply_patch(patch: &str, cached: bool) -> Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut args = vec!["apply", "--unidiff-zero"];
+    if cached {
+        args.push("--cached");
+    }
+    args.push("-");
+
+    let mut child = Command::new("git")
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to run git apply")?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        stdin.write_all(patch.as_bytes()).context("Failed to write patch to stdin")?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git apply failed: {}", stderr.trim());
+    }
+    Ok(())
+}
+
+/// Reverse-apply a patch from the index (unstage a hunk).
+fn apply_patch_reverse(patch: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new("git")
+        .args(["apply", "--cached", "--reverse", "--unidiff-zero", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Failed to run git apply --reverse")?;
+
+    if let Some(ref mut stdin) = child.stdin {
+        stdin.write_all(patch.as_bytes()).context("Failed to write patch to stdin")?;
+    }
+
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("git apply --reverse failed: {}", stderr.trim());
+    }
+    Ok(())
 }
 
 fn parse_diff_output(output: &str) -> Vec<FileDiff> {

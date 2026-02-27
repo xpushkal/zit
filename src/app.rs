@@ -364,7 +364,7 @@ impl App {
                 self.time_travel_state.refresh();
             }
             ConfirmAction::RemoveCollaborator(username) => {
-                if let Some(token) = self.config.github.get_token().map(|t| t.to_string()) {
+                if let Some(token) = self.config.github.get_token() {
                     match git::github_auth::remove_collaborator(&token, &username) {
                         Ok(()) => {
                             self.github_state.collab_error =
@@ -435,7 +435,7 @@ impl App {
             }
             InputAction::AddCollaborator => {
                 let username = value.trim().to_string();
-                if let Some(token) = self.config.github.get_token().map(|t| t.to_string()) {
+                if let Some(token) = self.config.github.get_token() {
                     match git::github_auth::add_collaborator(&token, &username) {
                         Ok(msg) => {
                             self.github_state.collab_error = Some(format!("✓ {}", msg));
