@@ -335,3 +335,132 @@ fn test_stash_clear_removes_all() {
     git(dir.path(), &["stash", "clear"]);
     assert_eq!(git(dir.path(), &["stash", "list"]).lines().count(), 0);
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// Commit workflow tests
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_stage_and_commit_workflow() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("app.txt"), "new feature\n").unwrap();
+    git(dir.path(), &["add", "app.txt"]);
+    git(dir.path(), &["commit", "-m", "add app"]);
+    let log = git(dir.path(), &["log", "--oneline"]);
+    assert!(log.contains("add app"));
+    assert_eq!(log.lines().count(), 2);
+}
+
+#[test]
+fn test_amend_commit() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("fix.txt"), "fix\n").unwrap();
+    git(dir.path(), &["add", "fix.txt"]);
+    git(dir.path(), &["commit", "-m", "wrong msg"]);
+    git(dir.path(), &["commit", "--amend", "-m", "correct msg"]);
+    let log = git(dir.path(), &["log", "--oneline"]);
+    assert!(log.contains("correct msg"));
+    assert!(!log.contains("wrong msg"));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Branch rename & merge tests
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_rename_branch() {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "old-name"]);
+    git(dir.path(), &["branch", "-m", "new-name"]);
+    let branches = git(dir.path(), &["branch"]);
+    assert!(branches.contains("new-name"));
+    assert!(!branches.contains("old-name"));
+}
+
+#[test]
+fn test_merge_branch() {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "feature"]);
+    std::fs::write(dir.path().join("feature.txt"), "feature work\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "feature commit"]);
+    git(dir.path(), &["checkout", "main"]);
+    git(dir.path(), &["merge", "feature", "--no-ff", "-m", "merge feature"]);
+    let log = git(dir.path(), &["log", "--oneline"]);
+    assert!(log.contains("merge feature"));
+    assert!(log.contains("feature commit"));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Reset tests  
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_soft_reset() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("reset.txt"), "data\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "to be reset"]);
+    let hash = git(dir.path(), &["rev-parse", "HEAD~1"]).trim().to_string();
+    git(dir.path(), &["reset", "--soft", &hash]);
+    // File should still be staged
+    let status = git(dir.path(), &["status", "--porcelain"]);
+    assert!(status.contains("reset.txt"));
+}
+
+#[test]
+fn test_mixed_reset() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("mixed.txt"), "data\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "to be mixed-reset"]);
+    let hash = git(dir.path(), &["rev-parse", "HEAD~1"]).trim().to_string();
+    git(dir.path(), &["reset", "--mixed", &hash]);
+    // File should be unstaged (untracked)
+    let status = git(dir.path(), &["status", "--porcelain"]);
+    assert!(status.contains("mixed.txt"));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Reflog recovery test
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_reflog_preserves_reset_history() {
+    let dir = init_repo();
+    std::fs::write(dir.path().join("file.txt"), "v1\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "v1"]);
+    let v1_hash = git(dir.path(), &["rev-parse", "HEAD"]).trim().to_string();
+    std::fs::write(dir.path().join("file.txt"), "v2\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "v2"]);
+    // Reset back to v1
+    git(dir.path(), &["reset", "--hard", &v1_hash]);
+    // Reflog should still contain v2
+    let reflog = git(dir.path(), &["reflog", "--oneline"]);
+    assert!(reflog.contains("v2"));
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Edge case: empty stash on clean repo
+// ────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_stash_on_clean_repo_fails() {
+    let dir = init_repo();
+    let output = Command::new("git")
+        .args(["stash", "push", "-m", "nothing"])
+        .current_dir(dir.path())
+        .output()
+        .expect("failed to run git");
+    // Git stash should indicate no changes to stash
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("No local changes") || combined.contains("no changes"),
+        "Expected stash to indicate no changes: {}",
+        combined
+    );
+}

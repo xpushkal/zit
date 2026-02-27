@@ -69,7 +69,6 @@ pub fn get_github_pat() -> Option<String> {
 }
 
 /// Delete the stored GitHub PAT.
-#[allow(dead_code)] // Individual delete utility — bulk delete uses delete_secret directly
 pub fn delete_github_pat() {
     delete_secret(KEY_GITHUB_PAT);
 }
@@ -87,7 +86,6 @@ pub fn get_ai_api_key() -> Option<String> {
 }
 
 /// Delete the stored AI API key.
-#[allow(dead_code)] // Individual delete utility — bulk delete uses delete_secret directly
 pub fn delete_ai_api_key() {
     delete_secret(KEY_AI_API_KEY);
 }
@@ -97,8 +95,8 @@ pub fn delete_ai_api_key() {
 /// Delete all zit secrets from the keychain (used on logout).
 pub fn clear_all() {
     delete_github_token();
-    delete_secret(KEY_GITHUB_PAT);
-    delete_secret(KEY_AI_API_KEY);
+    delete_github_pat();
+    delete_ai_api_key();
 }
 
 /// Migrate plaintext tokens from config to keychain.

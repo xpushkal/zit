@@ -7,7 +7,7 @@ pub enum AppEvent {
     Key(KeyEvent),
     Mouse(MouseEvent),
     Tick,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // dispatched from event loop but fields not read in match arm
     Resize(u16, u16),
 }
 

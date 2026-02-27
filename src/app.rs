@@ -63,7 +63,6 @@ pub enum InputAction {
     SearchCommits,
     SearchFiles,
     CommitMessage,
-    CreateRepo,
     AddCollaborator,
     AiSetupEndpoint,
     AiSetupApiKey,
@@ -452,9 +451,6 @@ impl App {
             }
             InputAction::CommitMessage => {
                 // Handled in commit view
-            }
-            InputAction::CreateRepo => {
-                self.status_message = Some(format!("Create repo '{}' (placeholder)", value));
             }
             InputAction::AddCollaborator => {
                 let username = value.trim().to_string();
