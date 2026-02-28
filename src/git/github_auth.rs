@@ -309,3 +309,265 @@ pub fn remove_collaborator(token: &str, username: &str) -> Result<()> {
         anyhow::bail!("{}", msg)
     }
 }
+
+// ─── Pull Request Types ────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct PullRequest {
+    pub number: u64,
+    pub title: String,
+    pub state: String,
+    pub body: Option<String>,
+    pub html_url: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub merged_at: Option<String>,
+    #[serde(default)]
+    pub draft: bool,
+    pub mergeable: Option<bool>,
+    pub mergeable_state: Option<String>,
+    pub head: PrBranch,
+    pub base: PrBranch,
+    pub user: GhUser,
+    #[serde(default)]
+    pub labels: Vec<GhLabel>,
+    #[serde(default)]
+    pub requested_reviewers: Vec<GhUser>,
+    pub additions: Option<u64>,
+    pub deletions: Option<u64>,
+    pub changed_files: Option<u64>,
+    pub comments: Option<u64>,
+    pub review_comments: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct PrBranch {
+    #[serde(default)]
+    pub label: String,
+    #[serde(rename = "ref")]
+    pub ref_name: String,
+    pub sha: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GhUser {
+    pub login: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct GhLabel {
+    pub name: String,
+    #[serde(default)]
+    pub color: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckRunsResponse {
+    pub total_count: u64,
+    pub check_runs: Vec<CheckRun>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct CheckRun {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    #[serde(default)]
+    pub html_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct PrFile {
+    pub filename: String,
+    pub status: String,
+    pub additions: u64,
+    pub deletions: u64,
+    pub changes: u64,
+    pub patch: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct PrReview {
+    pub user: GhUser,
+    pub state: String,
+    pub body: Option<String>,
+    pub submitted_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MergeResponse {
+    pub sha: String,
+    pub merged: bool,
+    pub message: String,
+}
+
+// ─── Pull Request API Functions ────────────────────────────────
+
+fn gh_get(token: &str, url: &str) -> Result<reqwest::blocking::Response> {
+    let client = reqwest::blocking::Client::new();
+    client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("User-Agent", "zit-cli")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .context("GitHub API request failed")
+}
+
+fn gh_put_json(token: &str, url: &str, body: &serde_json::Value) -> Result<reqwest::blocking::Response> {
+    let client = reqwest::blocking::Client::new();
+    client
+        .put(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("User-Agent", "zit-cli")
+        .header("Accept", "application/vnd.github+json")
+        .json(body)
+        .send()
+        .context("GitHub API request failed")
+}
+
+fn gh_patch_json(token: &str, url: &str, body: &serde_json::Value) -> Result<reqwest::blocking::Response> {
+    let client = reqwest::blocking::Client::new();
+    client
+        .patch(url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("User-Agent", "zit-cli")
+        .header("Accept", "application/vnd.github+json")
+        .json(body)
+        .send()
+        .context("GitHub API request failed")
+}
+
+/// List pull requests. `state` is "open", "closed", or "all".
+pub fn list_pull_requests(token: &str, state: &str) -> Result<Vec<PullRequest>> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls?state={}&per_page=50&sort=updated&direction=desc",
+        owner, repo, state
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse PR list")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let prs: Vec<PullRequest> = serde_json::from_value(body).context("Failed to deserialize PR list")?;
+    Ok(prs)
+}
+
+/// Get a single pull request with full detail (includes mergeable, additions/deletions).
+pub fn get_pull_request(token: &str, number: u64) -> Result<PullRequest> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        owner, repo, number
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse PR detail")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let pr: PullRequest = serde_json::from_value(body).context("Failed to deserialize PR")?;
+    Ok(pr)
+}
+
+/// Get CI check runs for a commit SHA.
+pub fn get_check_runs(token: &str, sha: &str) -> Result<CheckRunsResponse> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/commits/{}/check-runs",
+        owner, repo, sha
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse check runs")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let runs: CheckRunsResponse = serde_json::from_value(body).context("Failed to deserialize check runs")?;
+    Ok(runs)
+}
+
+/// Get files changed in a PR.
+pub fn get_pr_files(token: &str, number: u64) -> Result<Vec<PrFile>> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/files?per_page=100",
+        owner, repo, number
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse PR files")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let files: Vec<PrFile> = serde_json::from_value(body).context("Failed to deserialize PR files")?;
+    Ok(files)
+}
+
+/// Get reviews on a PR.
+pub fn get_pr_reviews(token: &str, number: u64) -> Result<Vec<PrReview>> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/reviews",
+        owner, repo, number
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse PR reviews")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let reviews: Vec<PrReview> = serde_json::from_value(body).context("Failed to deserialize PR reviews")?;
+    Ok(reviews)
+}
+
+/// Merge a pull request. `merge_method` is "merge", "squash", or "rebase".
+pub fn merge_pull_request(token: &str, number: u64, merge_method: &str) -> Result<MergeResponse> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}/merge",
+        owner, repo, number
+    );
+    let body = serde_json::json!({ "merge_method": merge_method });
+    let resp = gh_put_json(token, &url, &body)?;
+    let status = resp.status();
+    let resp_body: serde_json::Value = resp.json().context("Failed to parse merge response")?;
+    if !status.is_success() {
+        let msg = resp_body["message"].as_str().unwrap_or("Merge failed");
+        anyhow::bail!("{}", msg);
+    }
+    let merge: MergeResponse = serde_json::from_value(resp_body).context("Failed to deserialize merge response")?;
+    Ok(merge)
+}
+
+/// Close a pull request.
+pub fn close_pull_request(token: &str, number: u64) -> Result<PullRequest> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/pulls/{}",
+        owner, repo, number
+    );
+    let body = serde_json::json!({ "state": "closed" });
+    let resp = gh_patch_json(token, &url, &body)?;
+    let status = resp.status();
+    let resp_body: serde_json::Value = resp.json().context("Failed to parse close response")?;
+    if !status.is_success() {
+        let msg = resp_body["message"].as_str().unwrap_or("Close failed");
+        anyhow::bail!("{}", msg);
+    }
+    let pr: PullRequest = serde_json::from_value(resp_body).context("Failed to deserialize PR")?;
+    Ok(pr)
+}
