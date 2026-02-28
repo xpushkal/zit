@@ -4,6 +4,7 @@ pub mod commit;
 pub mod dashboard;
 pub mod github;
 pub mod help;
+pub mod merge_resolve;
 pub mod reflog;
 pub mod staging;
 pub mod stash;

@@ -236,6 +236,11 @@ fn draw(f: &mut Frame, app: &mut App) {
         View::Stash => {
             ui::stash::render(f, area, &mut app.stash_state);
         }
+        View::MergeResolve => {
+            let ai_loading = app.ai_loading;
+            let ai_available = app.ai_client.is_some();
+            ui::merge_resolve::render(f, area, &app.merge_resolve_state, ai_loading, ai_available);
+        }
     }
 
     // Render popup overlay
@@ -257,6 +262,72 @@ fn draw(f: &mut Frame, app: &mut App) {
         }
         Popup::Message { title, message } => {
             render_popup(f, area, title, message, Color::White);
+        }
+        Popup::FollowUp {
+            title,
+            context: _,
+            suggestions,
+            selected,
+        } => {
+            let popup_area = ui::utils::centered_rect(60, 50, area);
+            f.render_widget(Clear, popup_area);
+
+            let mut lines = vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  {}", title),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(""),
+            ];
+
+            for (i, item) in suggestions.iter().enumerate() {
+                let is_sel = i == *selected;
+                let prefix = if is_sel { "  ▶ " } else { "    " };
+                let style = if is_sel {
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{}{}", prefix, i + 1),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                    Span::raw(". "),
+                    Span::styled(&item.label, style),
+                ]));
+                lines.push(Line::from(Span::styled(
+                    format!("       {}", item.description),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  [Enter] Select  [j/k] Navigate  [Esc] Close",
+                Style::default().fg(Color::DarkGray),
+            )));
+
+            let popup = Paragraph::new(lines)
+                .block(
+                    Block::default()
+                        .title(Span::styled(
+                            " Follow-up Actions ",
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Yellow)),
+                )
+                .wrap(Wrap { trim: false });
+
+            f.render_widget(popup, popup_area);
         }
         Popup::None => {}
     }

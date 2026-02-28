@@ -274,6 +274,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
         Span::raw(" GitHub "),
         Span::styled("[a]", Style::default().fg(Color::Magenta)),
         Span::raw(" AI Mentor "),
+        Span::styled("[m]", Style::default().fg(Color::Red)),
+        Span::raw(" Merge "),
         Span::styled("[?]", Style::default().fg(Color::Cyan)),
         Span::raw(" Help "),
         Span::styled("[q]", Style::default().fg(Color::Red)),

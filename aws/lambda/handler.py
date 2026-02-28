@@ -24,7 +24,7 @@ def get_bedrock_client():
 MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-sonnet-20240229-v1:0')
 MAX_DIFF_LENGTH = 4000  # Limit diff content to avoid token explosion
 MAX_REQUEST_BODY_SIZE = 128_000  # 128KB max request body
-VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn', 'review']
+VALID_REQUEST_TYPES = ['explain', 'error', 'recommend', 'commit_suggestion', 'learn', 'review', 'merge_resolve', 'merge_strategy']
 
 
 def validate_request(body: dict) -> tuple:
@@ -126,6 +126,10 @@ def lambda_handler(event, context):
             response = handle_learn(repo_context, user_query)
         elif request_type == 'review':
             response = handle_review(repo_context, user_query)
+        elif request_type == 'merge_resolve':
+            response = handle_merge_resolve(repo_context, user_query)
+        elif request_type == 'merge_strategy':
+            response = handle_merge_strategy(repo_context, user_query)
         else:
             response = handle_explain(repo_context, user_query)
         
@@ -352,4 +356,54 @@ Diff Content:
     return {
         'type': 'review',
         'content': review
+    }
+
+
+def handle_merge_resolve(repo_context: dict, query: str) -> dict:
+    """Handle merge conflict resolution requests."""
+    system_prompt = get_system_prompt('merge_resolve')
+    context_str = format_context(repo_context)
+    
+    conflict_diff = repo_context.get('conflict_diff', '')
+    conflict_files = repo_context.get('conflict_files', [])
+    
+    user_message = f"""
+Repository Context:
+{context_str}
+
+Conflicted Files: {', '.join(conflict_files) if conflict_files else 'Unknown'}
+
+Conflict Content (with markers):
+{conflict_diff[:MAX_DIFF_LENGTH] if conflict_diff else 'No conflict content provided'}
+
+{f"Developer Notes: {query}" if query else "Analyze this merge conflict and recommend the best resolution."}
+"""
+    
+    resolution = invoke_bedrock_stream(system_prompt, user_message)
+    
+    return {
+        'type': 'merge_resolution',
+        'content': resolution
+    }
+
+
+def handle_merge_strategy(repo_context: dict, query: str) -> dict:
+    """Handle merge strategy recommendation requests."""
+    system_prompt = get_system_prompt('merge_strategy')
+    context_str = format_context(repo_context)
+    
+    user_message = f"""
+Repository Context:
+{context_str}
+
+{f"Developer Question: {query}" if query else "What is the safest strategy to integrate these branches?"}
+
+Please recommend the best merge/rebase strategy given the current repository state.
+"""
+    
+    recommendation = invoke_bedrock(system_prompt, user_message)
+    
+    return {
+        'type': 'merge_strategy',
+        'content': recommendation
     }

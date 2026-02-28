@@ -6,7 +6,8 @@ use crate::ai::client::AiClient;
 use crate::config::Config;
 use crate::git;
 use crate::ui::{
-    ai_mentor, branches, commit, dashboard, github, reflog, staging, stash, time_travel, timeline,
+    ai_mentor, branches, commit, dashboard, github, merge_resolve, reflog, staging, stash,
+    time_travel, timeline,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -21,6 +22,7 @@ pub enum View {
     GitHub,
     AiMentor,
     Stash,
+    MergeResolve,
 }
 
 /// Popup dialog state.
@@ -43,6 +45,38 @@ pub enum Popup {
         title: String,
         message: String,
     },
+    FollowUp {
+        title: String,
+        #[allow(dead_code)]
+        context: String,
+        suggestions: Vec<FollowUpItem>,
+        selected: usize,
+    },
+}
+
+/// A follow-up suggestion item shown after AI responses.
+#[derive(Debug, Clone)]
+pub struct FollowUpItem {
+    pub label: String,
+    pub description: String,
+    pub action: FollowUpAction,
+}
+
+/// Actions that can be triggered from follow-up suggestions.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub enum FollowUpAction {
+    ApplyResolution(String),   // file path
+    StageFile(String),         // file path
+    CommitNow,
+    AbortMerge,
+    ContinueMerge,
+    ViewNextConflict,
+    AskAiMore(String),         // context/question
+    SwitchToView(View),
+    RunGitCommand(Vec<String>),// args for git
+    EditCommitMessage,
+    RegenerateAiSuggestion,
 }
 
 #[derive(Debug, Clone)]
@@ -53,6 +87,8 @@ pub enum ConfirmAction {
     SoftReset(String),
     RemoveCollaborator(String),
     ClearStash,
+    AbortMerge,
+    ContinueMerge,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +116,8 @@ pub enum AiAction {
     ReviewDiff(String), // file path being reviewed
     AskQuestion,
     Learn,
+    MergeResolve(String),  // file path being resolved
+    MergeStrategy,
 }
 
 pub struct App {
@@ -106,6 +144,7 @@ pub struct App {
     pub github_state: github::GitHubState,
     pub ai_mentor_state: ai_mentor::AiMentorState,
     pub stash_state: stash::StashState,
+    pub merge_resolve_state: merge_resolve::MergeResolveState,
 }
 
 impl App {
@@ -141,6 +180,7 @@ impl App {
             github_state: github::GitHubState::new(),
             ai_mentor_state: ai_mentor::AiMentorState::default(),
             stash_state: stash::StashState::default(),
+            merge_resolve_state: merge_resolve::MergeResolveState::default(),
         }
     }
 
@@ -157,6 +197,7 @@ impl App {
             View::GitHub => {}   // no auto-refresh for GitHub
             View::AiMentor => {} // no auto-refresh
             View::Stash => self.stash_state.refresh(),
+            View::MergeResolve => self.merge_resolve_state.refresh(),
         }
     }
 
@@ -222,6 +263,58 @@ impl App {
                     || key.code == KeyCode::Char('q')
                 {
                     self.popup = Popup::None;
+                }
+                return Ok(());
+            }
+            Popup::FollowUp {
+                suggestions,
+                selected,
+                ..
+            } => {
+                let suggestions = suggestions.clone();
+                let sel = *selected;
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.popup = Popup::None;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if let Popup::FollowUp {
+                            ref mut selected, ..
+                        } = self.popup
+                        {
+                            if *selected > 0 {
+                                *selected -= 1;
+                            }
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if let Popup::FollowUp {
+                            ref mut selected,
+                            ref suggestions,
+                            ..
+                        } = self.popup
+                        {
+                            if *selected + 1 < suggestions.len() {
+                                *selected += 1;
+                            }
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(item) = suggestions.get(sel) {
+                            let action = item.action.clone();
+                            self.popup = Popup::None;
+                            self.execute_follow_up(action);
+                        }
+                    }
+                    KeyCode::Char(c) if c.is_ascii_digit() => {
+                        let idx = (c as usize) - ('1' as usize);
+                        if idx < suggestions.len() {
+                            let action = suggestions[idx].action.clone();
+                            self.popup = Popup::None;
+                            self.execute_follow_up(action);
+                        }
+                    }
+                    _ => {}
                 }
                 return Ok(());
             }
@@ -298,6 +391,12 @@ impl App {
                     self.stash_state.refresh();
                     return Ok(());
                 }
+                KeyCode::Char('m') => {
+                    // Open merge resolve view (only useful when conflicts exist)
+                    self.view = View::MergeResolve;
+                    self.merge_resolve_state.refresh();
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -314,6 +413,7 @@ impl App {
             View::GitHub => github::handle_key(self, key)?,
             View::AiMentor => ai_mentor::handle_key(self, key)?,
             View::Stash => stash::handle_key(self, key)?,
+            View::MergeResolve => merge_resolve::handle_key(self, key)?,
         }
 
         Ok(())
@@ -409,6 +509,34 @@ impl App {
                     }
                 }
                 self.stash_state.refresh();
+            }
+            ConfirmAction::AbortMerge => {
+                match git::merge::abort_merge() {
+                    Ok(()) => {
+                        self.set_status("Merge aborted successfully");
+                        self.view = View::Dashboard;
+                        self.dashboard_state.refresh();
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.set_status(format!("Error aborting merge: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
+                }
+            }
+            ConfirmAction::ContinueMerge => {
+                match git::merge::continue_merge() {
+                    Ok(()) => {
+                        self.set_status("Merge completed successfully!");
+                        self.view = View::Dashboard;
+                        self.dashboard_state.refresh();
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.set_status(format!("Error continuing merge: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
+                }
             }
         }
         Ok(())
@@ -745,6 +873,158 @@ impl App {
         });
     }
 
+    /// Start an async AI merge conflict resolution — non-blocking.
+    pub fn start_ai_merge_resolve(&mut self, file_path: String, conflict_content: String) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already working...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured — press 'a' to open AI Mentor and set up");
+                return;
+            }
+        };
+
+        if conflict_content.trim().is_empty() {
+            self.set_status("No conflict content to analyze");
+            return;
+        }
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::MergeResolve(file_path.clone()));
+        self.set_status(format!("⏳ AI analyzing conflict in {}...", file_path));
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client
+                .suggest_merge_resolution(&file_path, &conflict_content)
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Start an async AI merge strategy recommendation — non-blocking.
+    pub fn start_ai_merge_strategy(&mut self, query: Option<String>) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already working...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => c.clone(),
+            None => {
+                self.set_status("AI not configured — press 'a' to open AI Mentor and set up");
+                return;
+            }
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::MergeStrategy);
+        self.set_status("⏳ AI analyzing merge strategy...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client
+                .suggest_merge_strategy(query.as_deref())
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    /// Execute a follow-up action from the suggestion list.
+    pub fn execute_follow_up(&mut self, action: FollowUpAction) {
+        match action {
+            FollowUpAction::ApplyResolution(path) => {
+                if let Some(ref content) = self.merge_resolve_state.ai_resolved_content.clone() {
+                    match git::merge::resolve_file(&path, content) {
+                        Ok(()) => {
+                            self.set_status(format!("✓ Resolved and staged: {}", path));
+                            self.merge_resolve_state.refresh();
+                        }
+                        Err(e) => {
+                            self.set_status(format!("Error resolving: {}", e));
+                        }
+                    }
+                }
+            }
+            FollowUpAction::StageFile(path) => {
+                match git::run_git(&["add", &path]) {
+                    Ok(_) => self.set_status(format!("✓ Staged: {}", path)),
+                    Err(e) => self.set_status(format!("Error staging: {}", e)),
+                }
+            }
+            FollowUpAction::CommitNow => {
+                self.view = View::Commit;
+                self.commit_state.refresh();
+                self.auto_suggest_if_ready();
+            }
+            FollowUpAction::AbortMerge => {
+                self.popup = Popup::Confirm {
+                    title: "⚠ Abort Merge".to_string(),
+                    message: "This will discard all merge progress. Continue? (y/n)".to_string(),
+                    on_confirm: ConfirmAction::AbortMerge,
+                };
+            }
+            FollowUpAction::ContinueMerge => {
+                self.popup = Popup::Confirm {
+                    title: "Continue Merge".to_string(),
+                    message: "All conflicts resolved. Continue merge? (y/n)".to_string(),
+                    on_confirm: ConfirmAction::ContinueMerge,
+                };
+            }
+            FollowUpAction::ViewNextConflict => {
+                if self.merge_resolve_state.selected_file + 1
+                    < self.merge_resolve_state.conflicted_files.len()
+                {
+                    self.merge_resolve_state.selected_file += 1;
+                    self.merge_resolve_state.load_selected_file();
+                }
+            }
+            FollowUpAction::AskAiMore(question) => {
+                self.start_ai_ask(question);
+            }
+            FollowUpAction::SwitchToView(view) => {
+                self.view = view;
+                self.refresh();
+            }
+            FollowUpAction::RunGitCommand(args) => {
+                let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                match git::run_git(&args_str) {
+                    Ok(output) => self.set_status(format!("✓ {}", output.trim())),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        self.set_status(format!("Error: {}", err_str));
+                        self.start_ai_error_explain(err_str);
+                    }
+                }
+            }
+            FollowUpAction::EditCommitMessage => {
+                self.view = View::Commit;
+                self.commit_state.refresh();
+            }
+            FollowUpAction::RegenerateAiSuggestion => {
+                if self.view == View::Commit {
+                    self.start_ai_suggest();
+                } else if self.view == View::MergeResolve {
+                    let state = &self.merge_resolve_state;
+                    if let Some(content) = state.raw_conflict_content.clone() {
+                        let path = state
+                            .conflicted_files
+                            .get(state.selected_file)
+                            .map(|f| f.path.clone())
+                            .unwrap_or_default();
+                        self.start_ai_merge_resolve(path, content);
+                    }
+                }
+            }
+        }
+    }
+
     /// Poll for an AI result (non-blocking). Call on every tick/key event.
     pub fn poll_ai_result(&mut self) {
         if let Some(ref rx) = self.ai_receiver {
@@ -829,6 +1109,54 @@ impl App {
                             // Store in history
                             self.ai_mentor_state.add_history(
                                 label.to_string(),
+                                response,
+                            );
+                        }
+                        Some(AiAction::MergeResolve(file_path)) => {
+                            // Parse AI response and populate merge resolve state
+                            self.merge_resolve_state.ai_suggestion = Some(response.clone());
+                            self.merge_resolve_state.ai_resolved_content =
+                                parse_ai_resolved_content(&response);
+                            self.merge_resolve_state.ai_recommendation =
+                                parse_ai_recommendation(&response);
+                            self.set_status(format!(
+                                "✓ AI resolution ready for {}",
+                                file_path
+                            ));
+                            // Generate follow-up suggestions
+                            let follow_ups = generate_merge_follow_ups(
+                                &file_path,
+                                &self.merge_resolve_state,
+                            );
+                            if !follow_ups.is_empty() {
+                                self.merge_resolve_state.follow_ups = follow_ups;
+                            }
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                format!("Merge Resolve: {}", file_path),
+                                response,
+                            );
+                        }
+                        Some(AiAction::MergeStrategy) => {
+                            // Show strategy recommendation as popup with follow-ups
+                            let follow_ups = generate_strategy_follow_ups(&response);
+                            if follow_ups.is_empty() {
+                                self.popup = Popup::Message {
+                                    title: "🤖 AI Merge Strategy".to_string(),
+                                    message: response.clone(),
+                                };
+                            } else {
+                                self.popup = Popup::FollowUp {
+                                    title: "🤖 AI Merge Strategy".to_string(),
+                                    context: response.clone(),
+                                    suggestions: follow_ups,
+                                    selected: 0,
+                                };
+                            }
+                            self.set_status("✓ AI strategy recommendation ready");
+                            // Store in history
+                            self.ai_mentor_state.add_history(
+                                "Merge Strategy".to_string(),
                                 response,
                             );
                         }
@@ -941,4 +1269,176 @@ impl App {
             _ => {}
         }
     }
+}
+
+// ─── AI Response Parsing Helpers ───────────────────────────────
+
+/// Parse the RECOMMENDATION line from an AI merge resolution response.
+fn parse_ai_recommendation(response: &str) -> Option<String> {
+    for line in response.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("RECOMMENDATION:") {
+            return Some(
+                trimmed
+                    .strip_prefix("RECOMMENDATION:")
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            );
+        }
+        if trimmed.starts_with("RECOMMENDED:") {
+            return Some(
+                trimmed
+                    .strip_prefix("RECOMMENDED:")
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            );
+        }
+    }
+    None
+}
+
+/// Extract resolved content from code blocks in the AI response.
+fn parse_ai_resolved_content(response: &str) -> Option<String> {
+    // Look for RESOLVED CONTENT section followed by a code block
+    let mut in_resolved_section = false;
+    let mut in_code_block = false;
+    let mut content = Vec::new();
+
+    for line in response.lines() {
+        if line.trim().starts_with("RESOLVED CONTENT") {
+            in_resolved_section = true;
+            continue;
+        }
+        if in_resolved_section && line.trim().starts_with("```") {
+            if in_code_block {
+                // End of code block
+                break;
+            } else {
+                in_code_block = true;
+                continue;
+            }
+        }
+        if in_code_block {
+            content.push(line);
+        }
+    }
+
+    if content.is_empty() {
+        None
+    } else {
+        Some(content.join("\n"))
+    }
+}
+
+/// Generate follow-up suggestions after a merge conflict resolution AI response.
+fn generate_merge_follow_ups(
+    file_path: &str,
+    state: &merge_resolve::MergeResolveState,
+) -> Vec<FollowUpItem> {
+    let mut items = Vec::new();
+
+    // If AI provided resolved content, offer to apply it
+    if state.ai_resolved_content.is_some() {
+        items.push(FollowUpItem {
+            label: "Apply AI resolution".to_string(),
+            description: format!("Write resolved content and stage {}", file_path),
+            action: FollowUpAction::ApplyResolution(file_path.to_string()),
+        });
+    }
+
+    // Navigate to next conflict
+    if state.selected_file + 1 < state.conflicted_files.len() {
+        items.push(FollowUpItem {
+            label: "Next conflicted file".to_string(),
+            description: "Move to the next file with conflicts".to_string(),
+            action: FollowUpAction::ViewNextConflict,
+        });
+    }
+
+    // All conflicts resolved? Offer to continue merge
+    if state.conflicted_files.len() <= 1 {
+        items.push(FollowUpItem {
+            label: "Continue merge".to_string(),
+            description: "All conflicts resolved — finalize the merge".to_string(),
+            action: FollowUpAction::ContinueMerge,
+        });
+    }
+
+    // Always offer abort
+    items.push(FollowUpItem {
+        label: "Abort merge".to_string(),
+        description: "Discard all merge progress and return to previous state".to_string(),
+        action: FollowUpAction::AbortMerge,
+    });
+
+    // Ask AI for more explanation
+    items.push(FollowUpItem {
+        label: "Ask AI for more detail".to_string(),
+        description: "Get a deeper explanation of why this resolution was suggested".to_string(),
+        action: FollowUpAction::AskAiMore(format!(
+            "Explain in more detail why {} should be resolved this way",
+            file_path
+        )),
+    });
+
+    items
+}
+
+/// Generate follow-up suggestions after a merge strategy AI response.
+fn generate_strategy_follow_ups(response: &str) -> Vec<FollowUpItem> {
+    let mut items = Vec::new();
+
+    // Parse recommended strategy
+    let rec = parse_ai_recommendation(response);
+    let strategy = rec.as_deref().unwrap_or("");
+
+    if strategy.contains("MERGE") || strategy.contains("merge") {
+        items.push(FollowUpItem {
+            label: "Run merge --no-ff".to_string(),
+            description: "Execute the recommended merge strategy".to_string(),
+            action: FollowUpAction::AskAiMore(
+                "I chose to merge. What exact commands should I run and what should I watch for?"
+                    .to_string(),
+            ),
+        });
+    }
+    if strategy.contains("REBASE") || strategy.contains("rebase") {
+        items.push(FollowUpItem {
+            label: "Run rebase".to_string(),
+            description: "Execute the recommended rebase strategy".to_string(),
+            action: FollowUpAction::AskAiMore(
+                "I chose to rebase. Walk me through the exact steps and what to watch for."
+                    .to_string(),
+            ),
+        });
+    }
+    if strategy.contains("FAST") || strategy.contains("fast") {
+        items.push(FollowUpItem {
+            label: "Fast-forward merge".to_string(),
+            description: "Execute fast-forward merge".to_string(),
+            action: FollowUpAction::AskAiMore(
+                "I chose fast-forward. What exact command should I use?".to_string(),
+            ),
+        });
+    }
+
+    // Always offer conflict resolution view
+    items.push(FollowUpItem {
+        label: "View conflicts".to_string(),
+        description: "Open the merge conflict resolution view".to_string(),
+        action: FollowUpAction::SwitchToView(View::MergeResolve),
+    });
+
+    // Ask for alternatives
+    items.push(FollowUpItem {
+        label: "Ask for alternatives".to_string(),
+        description: "Get more detail on alternative strategies".to_string(),
+        action: FollowUpAction::AskAiMore(
+            "What are the trade-offs between merge and rebase for my situation?".to_string(),
+        ),
+    });
+
+    items
 }
