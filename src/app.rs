@@ -89,6 +89,8 @@ pub enum ConfirmAction {
     ClearStash,
     AbortMerge,
     ContinueMerge,
+    MergePullRequest { number: u64, method: String },
+    ClosePullRequest(u64),
 }
 
 #[derive(Debug, Clone)]
@@ -536,6 +538,32 @@ impl App {
                         self.set_status(format!("Error continuing merge: {}", err_str));
                         self.start_ai_error_explain(err_str);
                     }
+                }
+            }
+            ConfirmAction::MergePullRequest { number, method } => {
+                if let Some(token) = self.config.github.get_token() {
+                    self.github_state.pr_state.loading = true;
+                    let bg = self.github_state.pr_state.bg_result.clone();
+                    std::thread::spawn(move || {
+                        let result = git::github_auth::merge_pull_request(&token, number, &method)
+                            .map_err(|e| e.to_string());
+                        if let Ok(mut r) = bg.lock() {
+                            *r = Some(github::PrBgResult::MergeResult(result));
+                        }
+                    });
+                }
+            }
+            ConfirmAction::ClosePullRequest(number) => {
+                if let Some(token) = self.config.github.get_token() {
+                    self.github_state.pr_state.loading = true;
+                    let bg = self.github_state.pr_state.bg_result.clone();
+                    std::thread::spawn(move || {
+                        let result = git::github_auth::close_pull_request(&token, number)
+                            .map_err(|e| e.to_string());
+                        if let Ok(mut r) = bg.lock() {
+                            *r = Some(github::PrBgResult::CloseResult(result));
+                        }
+                    });
                 }
             }
         }

@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -16,6 +16,149 @@ pub enum GitHubView {
     DeviceAuth(DeviceAuthState),
     CreateRepo,
     Collaborators,
+    PullRequests,
+    PullRequestDetail(u64),
+}
+
+// ─── Pull Request UI Types ────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrFilter {
+    Open,
+    Closed,
+    All,
+}
+
+impl PrFilter {
+    pub fn label(&self) -> &str {
+        match self {
+            PrFilter::Open => "Open",
+            PrFilter::Closed => "Closed",
+            PrFilter::All => "All",
+        }
+    }
+
+    pub fn api_state(&self) -> &str {
+        match self {
+            PrFilter::Open => "open",
+            PrFilter::Closed => "closed",
+            PrFilter::All => "all",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            PrFilter::Open => PrFilter::Closed,
+            PrFilter::Closed => PrFilter::All,
+            PrFilter::All => PrFilter::Open,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PrDetailTab {
+    Overview,
+    Files,
+    Reviews,
+}
+
+impl PrDetailTab {
+    pub fn next(&self) -> Self {
+        match self {
+            PrDetailTab::Overview => PrDetailTab::Files,
+            PrDetailTab::Files => PrDetailTab::Reviews,
+            PrDetailTab::Reviews => PrDetailTab::Overview,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MergeMethod {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+impl MergeMethod {
+    pub fn label(&self) -> &str {
+        match self {
+            MergeMethod::Merge => "merge",
+            MergeMethod::Squash => "squash",
+            MergeMethod::Rebase => "rebase",
+        }
+    }
+
+    pub fn display(&self) -> &str {
+        match self {
+            MergeMethod::Merge => "Create Merge Commit",
+            MergeMethod::Squash => "Squash and Merge",
+            MergeMethod::Rebase => "Rebase and Merge",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            MergeMethod::Merge => MergeMethod::Squash,
+            MergeMethod::Squash => MergeMethod::Rebase,
+            MergeMethod::Rebase => MergeMethod::Merge,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PrBgResult {
+    PrList(Result<Vec<git::github_auth::PullRequest>, String>),
+    PrDetail {
+        pr: Result<git::github_auth::PullRequest, String>,
+        checks: Result<git::github_auth::CheckRunsResponse, String>,
+        files: Result<Vec<git::github_auth::PrFile>, String>,
+        reviews: Result<Vec<git::github_auth::PrReview>, String>,
+    },
+    MergeResult(Result<git::github_auth::MergeResponse, String>),
+    CloseResult(Result<git::github_auth::PullRequest, String>),
+}
+
+pub struct PullRequestsState {
+    pub prs: Vec<git::github_auth::PullRequest>,
+    pub selected: usize,
+    pub list_state: ListState,
+    pub filter: PrFilter,
+    pub loading: bool,
+    pub error: Option<String>,
+    // Detail view
+    pub detail_pr: Option<git::github_auth::PullRequest>,
+    pub detail_checks: Option<git::github_auth::CheckRunsResponse>,
+    pub detail_files: Vec<git::github_auth::PrFile>,
+    pub detail_reviews: Vec<git::github_auth::PrReview>,
+    pub detail_tab: PrDetailTab,
+    pub detail_scroll: u16,
+    pub files_selected: usize,
+    pub files_list_state: ListState,
+    pub merge_method: MergeMethod,
+    pub bg_result: Arc<Mutex<Option<PrBgResult>>>,
+}
+
+impl PullRequestsState {
+    pub fn new() -> Self {
+        Self {
+            prs: Vec::new(),
+            selected: 0,
+            list_state: ListState::default(),
+            filter: PrFilter::Open,
+            loading: false,
+            error: None,
+            detail_pr: None,
+            detail_checks: None,
+            detail_files: Vec::new(),
+            detail_reviews: Vec::new(),
+            detail_tab: PrDetailTab::Overview,
+            detail_scroll: 0,
+            files_selected: 0,
+            files_list_state: ListState::default(),
+            merge_method: MergeMethod::Merge,
+            bg_result: Arc::new(Mutex::new(None)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,6 +188,8 @@ pub struct GitHubState {
     pub collab_error: Option<String>,
     // Background operation result
     pub bg_result: Arc<Mutex<Option<String>>>,
+    // Pull-request state
+    pub pr_state: PullRequestsState,
     // Status
     pub status: Option<String>,
 }
@@ -67,6 +212,7 @@ impl GitHubState {
             collab_list_state: ListState::default(),
             collab_error: None,
             bg_result: Arc::new(Mutex::new(None)),
+            pr_state: PullRequestsState::new(),
             status: None,
         }
     }
@@ -80,6 +226,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut GitHubState, config: &crate
         GitHubView::DeviceAuth(auth_state) => render_device_auth(f, area, auth_state),
         GitHubView::CreateRepo => render_create_repo(f, area, state),
         GitHubView::Collaborators => render_collaborators(f, area, state),
+        GitHubView::PullRequests => render_pull_requests(f, area, state),
+        GitHubView::PullRequestDetail(_) => render_pr_detail(f, area, state),
     }
 }
 
@@ -170,6 +318,10 @@ fn render_menu(
         ListItem::new(Line::from(vec![
             Span::styled("  👥  ", Style::default()),
             Span::styled("Manage Collaborators", Style::default().fg(Color::White)),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled("  🔀  ", Style::default()),
+            Span::styled("Pull Requests", Style::default().fg(Color::White)),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("  🚪  ", Style::default()),
@@ -543,6 +695,8 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
         GitHubView::DeviceAuth(_) => handle_device_auth_key(app, key),
         GitHubView::CreateRepo => handle_create_repo_key(app, key),
         GitHubView::Collaborators => handle_collaborators_key(app, key),
+        GitHubView::PullRequests => handle_pull_requests_key(app, key),
+        GitHubView::PullRequestDetail(_) => handle_pr_detail_key(app, key),
     }
 }
 
@@ -556,7 +710,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.github_state.menu_selected < 6 {
+            if app.github_state.menu_selected < 7 {
                 app.github_state.menu_selected += 1;
                 let sel = app.github_state.menu_selected;
                 app.github_state.menu_state.select(Some(sel));
@@ -648,6 +802,16 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.github_state.view = GitHubView::Collaborators;
                 }
                 6 => {
+                    // Pull Requests
+                    if app.config.github.get_token().is_none() {
+                        app.github_state.status =
+                            Some("Login first to view pull requests".to_string());
+                        return Ok(());
+                    }
+                    start_load_prs(app);
+                    app.github_state.view = GitHubView::PullRequests;
+                }
+                7 => {
                     // Logout — clear keychain and config
                     if app.config.github.get_token().is_some() {
                         crate::keychain::clear_all();
@@ -909,5 +1073,848 @@ fn handle_collaborators_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow:
         _ => {}
     }
 
+    Ok(())
+}
+
+// ─── Pull Request Loading ────────────────────────────────
+
+fn start_load_prs(app: &mut crate::app::App) {
+    app.github_state.pr_state.loading = true;
+    app.github_state.pr_state.error = None;
+    let token = app.config.github.get_token().unwrap_or_default();
+    let filter = app.github_state.pr_state.filter.api_state().to_string();
+    let bg = app.github_state.pr_state.bg_result.clone();
+    std::thread::spawn(move || {
+        let result = git::github_auth::list_pull_requests(&token, &filter)
+            .map_err(|e| e.to_string());
+        if let Ok(mut r) = bg.lock() {
+            *r = Some(PrBgResult::PrList(result));
+        }
+    });
+}
+
+fn start_load_pr_detail(app: &mut crate::app::App, number: u64) {
+    app.github_state.pr_state.loading = true;
+    app.github_state.pr_state.error = None;
+    app.github_state.pr_state.detail_tab = PrDetailTab::Overview;
+    app.github_state.pr_state.detail_scroll = 0;
+    app.github_state.pr_state.files_selected = 0;
+    let token = app.config.github.get_token().unwrap_or_default();
+    let bg = app.github_state.pr_state.bg_result.clone();
+    std::thread::spawn(move || {
+        let pr = git::github_auth::get_pull_request(&token, number)
+            .map_err(|e| e.to_string());
+        let sha = pr.as_ref().map(|p| p.head.sha.clone()).unwrap_or_default();
+        let checks = git::github_auth::get_check_runs(&token, &sha)
+            .map_err(|e| e.to_string());
+        let files = git::github_auth::get_pr_files(&token, number)
+            .map_err(|e| e.to_string());
+        let reviews = git::github_auth::get_pr_reviews(&token, number)
+            .map_err(|e| e.to_string());
+        if let Ok(mut r) = bg.lock() {
+            *r = Some(PrBgResult::PrDetail { pr, checks, files, reviews });
+        }
+    });
+}
+
+/// Called on each tick to poll for PR background results.
+pub fn tick_pr_state(app: &mut crate::app::App) {
+    let bg_taken = {
+        if let Ok(mut result) = app.github_state.pr_state.bg_result.try_lock() {
+            result.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some(bg) = bg_taken {
+        app.github_state.pr_state.loading = false;
+        match bg {
+            PrBgResult::PrList(Ok(prs)) => {
+                app.github_state.pr_state.prs = prs;
+                app.github_state.pr_state.selected = 0;
+                app.github_state.pr_state.list_state.select(
+                    if app.github_state.pr_state.prs.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    },
+                );
+                app.github_state.pr_state.error = None;
+            }
+            PrBgResult::PrList(Err(e)) => {
+                app.github_state.pr_state.error = Some(e);
+            }
+            PrBgResult::PrDetail { pr, checks, files, reviews } => {
+                match pr {
+                    Ok(p) => {
+                        app.github_state.pr_state.detail_pr = Some(p);
+                        app.github_state.pr_state.error = None;
+                    }
+                    Err(e) => {
+                        app.github_state.pr_state.error = Some(e);
+                    }
+                }
+                if let Ok(c) = checks {
+                    app.github_state.pr_state.detail_checks = Some(c);
+                }
+                match files {
+                    Ok(f) => {
+                        app.github_state.pr_state.detail_files = f;
+                        app.github_state.pr_state.files_list_state.select(
+                            if app.github_state.pr_state.detail_files.is_empty() {
+                                None
+                            } else {
+                                Some(0)
+                            },
+                        );
+                    }
+                    Err(_) => {}
+                }
+                if let Ok(r) = reviews {
+                    app.github_state.pr_state.detail_reviews = r;
+                }
+            }
+            PrBgResult::MergeResult(Ok(resp)) => {
+                if resp.merged {
+                    app.github_state.status = Some(format!("✓ PR merged! ({})", resp.sha));
+                    if let GitHubView::PullRequestDetail(n) = app.github_state.view {
+                        start_load_pr_detail(app, n);
+                    }
+                } else {
+                    app.github_state.pr_state.error =
+                        Some(format!("Merge failed: {}", resp.message));
+                }
+            }
+            PrBgResult::MergeResult(Err(e)) => {
+                app.github_state.pr_state.error = Some(format!("Merge failed: {}", e));
+            }
+            PrBgResult::CloseResult(Ok(pr)) => {
+                app.github_state.status =
+                    Some(format!("✓ PR #{} closed", pr.number));
+                if let GitHubView::PullRequestDetail(n) = app.github_state.view {
+                    start_load_pr_detail(app, n);
+                }
+            }
+            PrBgResult::CloseResult(Err(e)) => {
+                app.github_state.pr_state.error = Some(format!("Close failed: {}", e));
+            }
+        }
+    }
+}
+
+// ─── Pull Request List Rendering ────────────────────────────────
+
+fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Length(3), // Filter bar
+            Constraint::Min(6),    // PR list
+            Constraint::Length(2), // Keys
+            Constraint::Length(2), // Status/Error
+        ])
+        .split(area);
+
+    // Title
+    let pr_count = state.pr_state.prs.len();
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled("  🔀 ", Style::default()),
+        Span::styled(
+            "Pull Requests",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  ({} {})", pr_count, state.pr_state.filter.label().to_lowercase()),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(title, chunks[0]);
+
+    // Filter bar
+    let filters = vec!["Open", "Closed", "All"];
+    let selected_idx = match state.pr_state.filter {
+        PrFilter::Open => 0,
+        PrFilter::Closed => 1,
+        PrFilter::All => 2,
+    };
+    let tabs = Tabs::new(filters.iter().map(|f| Line::from(*f)).collect::<Vec<_>>())
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Filter [f] ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .select(selected_idx)
+        .style(Style::default().fg(Color::DarkGray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
+    f.render_widget(tabs, chunks[1]);
+
+    // PR list
+    if state.pr_state.loading {
+        let loading = Paragraph::new(Line::from(vec![
+            Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
+            Span::styled("Loading pull requests...", Style::default().fg(Color::DarkGray)),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(loading, chunks[2]);
+    } else if state.pr_state.prs.is_empty() {
+        let empty = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  No pull requests found.",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(empty, chunks[2]);
+    } else {
+        let items: Vec<ListItem> = state
+            .pr_state
+            .prs
+            .iter()
+            .map(|pr| {
+                let state_icon = if pr.draft {
+                    Span::styled("  📝 ", Style::default())
+                } else if pr.state == "open" {
+                    Span::styled("  🟢 ", Style::default())
+                } else if pr.merged_at.is_some() {
+                    Span::styled("  🟣 ", Style::default())
+                } else {
+                    Span::styled("  🔴 ", Style::default())
+                };
+
+                let number = Span::styled(
+                    format!("#{} ", pr.number),
+                    Style::default().fg(Color::Cyan),
+                );
+                let title_text = Span::styled(
+                    pr.title.chars().take(60).collect::<String>(),
+                    Style::default().fg(Color::White),
+                );
+                let author = Span::styled(
+                    format!("  @{}", pr.user.login),
+                    Style::default().fg(Color::DarkGray),
+                );
+                let stats = Span::styled(
+                    format!("  +{} -{}", pr.additions.unwrap_or(0), pr.deletions.unwrap_or(0)),
+                    Style::default().fg(Color::DarkGray),
+                );
+
+                ListItem::new(Line::from(vec![state_icon, number, title_text, author, stats]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(list, chunks[2], &mut state.pr_state.list_state);
+    }
+
+    // Keys
+    let keys = Paragraph::new(Line::from(vec![
+        Span::styled(" [Enter]", Style::default().fg(Color::Cyan)),
+        Span::raw(" Open "),
+        Span::styled("[f]", Style::default().fg(Color::Yellow)),
+        Span::raw(" Filter "),
+        Span::styled("[r]", Style::default().fg(Color::Green)),
+        Span::raw(" Refresh "),
+        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+        Span::raw(" Back"),
+    ]));
+    f.render_widget(keys, chunks[3]);
+
+    // Error
+    if let Some(ref err) = state.pr_state.error {
+        let status = Paragraph::new(Span::styled(
+            format!(" {}", err),
+            Style::default().fg(Color::Red),
+        ));
+        f.render_widget(status, chunks[4]);
+    }
+}
+
+// ─── Pull Request Detail Rendering ────────────────────────────────
+
+fn render_pr_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // Title + meta
+            Constraint::Length(3), // Tab bar
+            Constraint::Min(8),    // Tab content
+            Constraint::Length(2), // Keys
+            Constraint::Length(2), // Error
+        ])
+        .split(area);
+
+    let pr = state.pr_state.detail_pr.as_ref();
+
+    // Title + meta
+    if state.pr_state.loading && pr.is_none() {
+        let loading = Paragraph::new(Line::from(vec![
+            Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
+            Span::styled("Loading PR details...", Style::default().fg(Color::DarkGray)),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+        f.render_widget(loading, chunks[0]);
+    } else if let Some(pr) = pr {
+        let state_color = if pr.state == "open" { Color::Green } else if pr.merged_at.is_some() { Color::Magenta } else { Color::Red };
+        let state_label = if pr.merged_at.is_some() { "MERGED" } else { &pr.state.to_uppercase() };
+        let mergeable_info = match pr.mergeable {
+            Some(true) => Span::styled(" ✓ Mergeable", Style::default().fg(Color::Green)),
+            Some(false) => Span::styled(" ✗ Conflicts", Style::default().fg(Color::Red)),
+            None => Span::styled(" ? Checking...", Style::default().fg(Color::Yellow)),
+        };
+
+        let title_block = Paragraph::new(vec![
+            Line::from(vec![
+                Span::styled(
+                    format!("  #{} ", pr.number),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    &pr.title,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    format!(" {} ", state_label),
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(state_color)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  {} → {}", pr.head.ref_name, pr.base.ref_name),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    format!("  by @{}", pr.user.login),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                mergeable_info,
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!(
+                        "  {} files changed  +{} -{}", 
+                        pr.changed_files.unwrap_or(0), pr.additions.unwrap_or(0), pr.deletions.unwrap_or(0)
+                    ),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]),
+        ])
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        );
+        f.render_widget(title_block, chunks[0]);
+    }
+
+    // Tab bar
+    let tab_titles = vec!["Overview", "Files", "Reviews"];
+    let selected_tab = match state.pr_state.detail_tab {
+        PrDetailTab::Overview => 0,
+        PrDetailTab::Files => 1,
+        PrDetailTab::Reviews => 2,
+    };
+    let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(*t)).collect::<Vec<_>>())
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " [Tab] Switch ",
+                    Style::default().fg(Color::DarkGray),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .select(selected_tab)
+        .style(Style::default().fg(Color::DarkGray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        );
+    f.render_widget(tabs, chunks[1]);
+
+    // Tab content
+    match state.pr_state.detail_tab {
+        PrDetailTab::Overview => render_pr_overview(f, chunks[2], state),
+        PrDetailTab::Files => render_pr_files(f, chunks[2], state),
+        PrDetailTab::Reviews => render_pr_reviews(f, chunks[2], state),
+    }
+
+    // Keys
+    let keys = if let Some(pr) = state.pr_state.detail_pr.as_ref() {
+        if pr.state == "open" {
+            Line::from(vec![
+                Span::styled(" [Tab]", Style::default().fg(Color::Yellow)),
+                Span::raw(" Switch Tab "),
+                Span::styled("[m]", Style::default().fg(Color::Green)),
+                Span::raw(format!(" {} ", state.pr_state.merge_method.display())),
+                Span::styled("[M]", Style::default().fg(Color::Yellow)),
+                Span::raw(" Cycle Method "),
+                Span::styled("[c]", Style::default().fg(Color::Red)),
+                Span::raw(" Close "),
+                Span::styled("[o]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Browser "),
+                Span::styled("[r]", Style::default().fg(Color::Green)),
+                Span::raw(" Refresh "),
+                Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+                Span::raw(" Back"),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(" [Tab]", Style::default().fg(Color::Yellow)),
+                Span::raw(" Switch Tab "),
+                Span::styled("[o]", Style::default().fg(Color::Cyan)),
+                Span::raw(" Browser "),
+                Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+                Span::raw(" Back"),
+            ])
+        }
+    } else {
+        Line::from(vec![
+            Span::styled(" [Esc]", Style::default().fg(Color::DarkGray)),
+            Span::raw(" Back"),
+        ])
+    };
+    f.render_widget(Paragraph::new(keys), chunks[3]);
+
+    // Error
+    if let Some(ref err) = state.pr_state.error {
+        let status = Paragraph::new(Span::styled(
+            format!(" {}", err),
+            Style::default().fg(Color::Red),
+        ));
+        f.render_widget(status, chunks[4]);
+    }
+}
+
+fn render_pr_overview(f: &mut Frame, area: Rect, state: &GitHubState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(8), // Checks
+            Constraint::Min(4),    // Body / description
+        ])
+        .split(area);
+
+    // CI Checks
+    if let Some(ref checks) = state.pr_state.detail_checks {
+        let mut lines = vec![Line::from(vec![
+            Span::styled(
+                format!("  Checks ({} total)", checks.total_count),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])];
+
+        for run in checks.check_runs.iter().take(5) {
+            let icon = match run.conclusion.as_deref() {
+                Some("success") => Span::styled("  ✓ ", Style::default().fg(Color::Green)),
+                Some("failure") => Span::styled("  ✗ ", Style::default().fg(Color::Red)),
+                Some("neutral") | Some("skipped") => {
+                    Span::styled("  ○ ", Style::default().fg(Color::DarkGray))
+                }
+                _ => Span::styled("  ◐ ", Style::default().fg(Color::Yellow)),
+            };
+            let name = Span::styled(&run.name, Style::default().fg(Color::White));
+            let status = Span::styled(
+                format!(
+                    "  ({})",
+                    run.conclusion.as_deref().unwrap_or(&run.status)
+                ),
+                Style::default().fg(Color::DarkGray),
+            );
+            lines.push(Line::from(vec![icon, name, status]));
+        }
+
+        if checks.total_count > 5 {
+            lines.push(Line::from(Span::styled(
+                format!("  ... and {} more", checks.total_count - 5),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+
+        let checks_block = Paragraph::new(lines).block(
+            Block::default()
+                .title(Span::styled(
+                    " CI Status ",
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(checks_block, chunks[0]);
+    } else {
+        let no_checks = Paragraph::new(Span::styled(
+            "  No check data available",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " CI Status ",
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(no_checks, chunks[0]);
+    }
+
+    // Body
+    if let Some(ref pr) = state.pr_state.detail_pr {
+        let body_text = pr
+            .body
+            .as_deref()
+            .unwrap_or("No description provided.");
+        let body_lines: Vec<Line> = body_text
+            .lines()
+            .map(|l| Line::from(Span::styled(format!("  {}", l), Style::default().fg(Color::White))))
+            .collect();
+
+        let body = Paragraph::new(body_lines)
+            .scroll((state.pr_state.detail_scroll, 0))
+            .block(
+                Block::default()
+                    .title(Span::styled(
+                        " Description ",
+                        Style::default().fg(Color::White),
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            );
+        f.render_widget(body, chunks[1]);
+    }
+}
+
+fn render_pr_files(f: &mut Frame, area: Rect, state: &mut GitHubState) {
+    if state.pr_state.detail_files.is_empty() {
+        let empty = Paragraph::new(Span::styled(
+            "  No files changed",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Changed Files ",
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(empty, area);
+        return;
+    }
+
+    let items: Vec<ListItem> = state
+        .pr_state
+        .detail_files
+        .iter()
+        .map(|file| {
+            let status_icon = match file.status.as_str() {
+                "added" => Span::styled("  A ", Style::default().fg(Color::Green)),
+                "removed" => Span::styled("  D ", Style::default().fg(Color::Red)),
+                "modified" => Span::styled("  M ", Style::default().fg(Color::Yellow)),
+                "renamed" => Span::styled("  R ", Style::default().fg(Color::Cyan)),
+                _ => Span::styled("  ? ", Style::default().fg(Color::DarkGray)),
+            };
+            let filename = Span::styled(&file.filename, Style::default().fg(Color::White));
+            let changes = Span::styled(
+                format!("  +{} -{}", file.additions, file.deletions),
+                Style::default().fg(Color::DarkGray),
+            );
+            ListItem::new(Line::from(vec![status_icon, filename, changes]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    format!(" Changed Files ({}) ", state.pr_state.detail_files.len()),
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+
+    f.render_stateful_widget(list, area, &mut state.pr_state.files_list_state);
+}
+
+fn render_pr_reviews(f: &mut Frame, area: Rect, state: &GitHubState) {
+    if state.pr_state.detail_reviews.is_empty() {
+        let empty = Paragraph::new(Span::styled(
+            "  No reviews yet",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    " Reviews ",
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(empty, area);
+        return;
+    }
+
+    let mut lines: Vec<Line> = Vec::new();
+    for review in &state.pr_state.detail_reviews {
+        let icon = match review.state.as_str() {
+            "APPROVED" => Span::styled("  ✓ ", Style::default().fg(Color::Green)),
+            "CHANGES_REQUESTED" => Span::styled("  ✗ ", Style::default().fg(Color::Red)),
+            "COMMENTED" => Span::styled("  💬 ", Style::default().fg(Color::Cyan)),
+            "DISMISSED" => Span::styled("  ○ ", Style::default().fg(Color::DarkGray)),
+            _ => Span::styled("  ? ", Style::default().fg(Color::DarkGray)),
+        };
+        let user = Span::styled(
+            format!("@{}", review.user.login),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
+        let state_text = Span::styled(
+            format!("  {}", review.state.replace('_', " ").to_lowercase()),
+            Style::default().fg(Color::DarkGray),
+        );
+        lines.push(Line::from(vec![icon, user, state_text]));
+
+        if let Some(ref body) = review.body {
+            if !body.is_empty() {
+                for body_line in body.lines().take(3) {
+                    lines.push(Line::from(Span::styled(
+                        format!("      {}", body_line),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+            }
+        }
+        lines.push(Line::from(""));
+    }
+
+    let reviews_widget = Paragraph::new(lines)
+        .scroll((state.pr_state.detail_scroll, 0))
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    format!(" Reviews ({}) ", state.pr_state.detail_reviews.len()),
+                    Style::default().fg(Color::White),
+                ))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+    f.render_widget(reviews_widget, area);
+}
+
+// ─── Pull Request Key Handlers ────────────────────────────────
+
+fn handle_pull_requests_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    match key.code {
+        KeyCode::Esc => {
+            app.github_state.view = GitHubView::Menu;
+            app.github_state.pr_state.error = None;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.github_state.pr_state.selected > 0 {
+                app.github_state.pr_state.selected -= 1;
+                let sel = app.github_state.pr_state.selected;
+                app.github_state.pr_state.list_state.select(Some(sel));
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if !app.github_state.pr_state.prs.is_empty()
+                && app.github_state.pr_state.selected + 1 < app.github_state.pr_state.prs.len()
+            {
+                app.github_state.pr_state.selected += 1;
+                let sel = app.github_state.pr_state.selected;
+                app.github_state.pr_state.list_state.select(Some(sel));
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(pr) = app
+                .github_state
+                .pr_state
+                .prs
+                .get(app.github_state.pr_state.selected)
+            {
+                let number = pr.number;
+                app.github_state.view = GitHubView::PullRequestDetail(number);
+                start_load_pr_detail(app, number);
+            }
+        }
+        KeyCode::Char('f') => {
+            app.github_state.pr_state.filter = app.github_state.pr_state.filter.next();
+            start_load_prs(app);
+        }
+        KeyCode::Char('r') => {
+            start_load_prs(app);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_pr_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    match key.code {
+        KeyCode::Esc => {
+            app.github_state.view = GitHubView::PullRequests;
+            app.github_state.pr_state.error = None;
+            // Refresh list in case merge/close changed things
+            start_load_prs(app);
+        }
+        KeyCode::Tab => {
+            app.github_state.pr_state.detail_tab = app.github_state.pr_state.detail_tab.next();
+            app.github_state.pr_state.detail_scroll = 0;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            match app.github_state.pr_state.detail_tab {
+                PrDetailTab::Files => {
+                    if app.github_state.pr_state.files_selected > 0 {
+                        app.github_state.pr_state.files_selected -= 1;
+                        let sel = app.github_state.pr_state.files_selected;
+                        app.github_state.pr_state.files_list_state.select(Some(sel));
+                    }
+                }
+                _ => {
+                    if app.github_state.pr_state.detail_scroll > 0 {
+                        app.github_state.pr_state.detail_scroll -= 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            match app.github_state.pr_state.detail_tab {
+                PrDetailTab::Files => {
+                    if !app.github_state.pr_state.detail_files.is_empty()
+                        && app.github_state.pr_state.files_selected + 1
+                            < app.github_state.pr_state.detail_files.len()
+                    {
+                        app.github_state.pr_state.files_selected += 1;
+                        let sel = app.github_state.pr_state.files_selected;
+                        app.github_state.pr_state.files_list_state.select(Some(sel));
+                    }
+                }
+                _ => {
+                    app.github_state.pr_state.detail_scroll += 1;
+                }
+            }
+        }
+        KeyCode::Char('m') => {
+            // Merge PR
+            if let Some(pr) = app.github_state.pr_state.detail_pr.as_ref() {
+                if pr.state == "open" {
+                    let number = pr.number;
+                    let method = app.github_state.pr_state.merge_method.label().to_string();
+                    app.popup = crate::app::Popup::Confirm {
+                        title: "Merge Pull Request".to_string(),
+                        message: format!(
+                            "Merge PR #{} using {}?\n\n[y] Yes  [n] No",
+                            number,
+                            app.github_state.pr_state.merge_method.display()
+                        ),
+                        on_confirm: crate::app::ConfirmAction::MergePullRequest {
+                            number,
+                            method,
+                        },
+                    };
+                }
+            }
+        }
+        KeyCode::Char('M') => {
+            // Cycle merge method
+            app.github_state.pr_state.merge_method =
+                app.github_state.pr_state.merge_method.next();
+        }
+        KeyCode::Char('c') => {
+            // Close PR
+            if let Some(pr) = app.github_state.pr_state.detail_pr.as_ref() {
+                if pr.state == "open" {
+                    let number = pr.number;
+                    app.popup = crate::app::Popup::Confirm {
+                        title: "Close Pull Request".to_string(),
+                        message: format!(
+                            "Close PR #{} without merging?\n\n[y] Yes  [n] No",
+                            number,
+                        ),
+                        on_confirm: crate::app::ConfirmAction::ClosePullRequest(number),
+                    };
+                }
+            }
+        }
+        KeyCode::Char('o') => {
+            // Open in browser
+            if let Some(pr) = app.github_state.pr_state.detail_pr.as_ref() {
+                #[cfg(target_os = "macos")]
+                let _ = std::process::Command::new("open").arg(&pr.html_url).spawn();
+                #[cfg(target_os = "linux")]
+                let _ = std::process::Command::new("xdg-open").arg(&pr.html_url).spawn();
+                #[cfg(target_os = "windows")]
+                let _ = std::process::Command::new("cmd").args(["/C", "start", &pr.html_url]).spawn();
+            }
+        }
+        KeyCode::Char('r') => {
+            // Refresh
+            if let GitHubView::PullRequestDetail(n) = app.github_state.view {
+                start_load_pr_detail(app, n);
+            }
+        }
+        _ => {}
+    }
     Ok(())
 }

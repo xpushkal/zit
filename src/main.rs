@@ -179,6 +179,7 @@ fn run_app(
                 // Poll GitHub Device Flow if active
                 if app.view == View::GitHub {
                     ui::github::tick_device_auth(app);
+                    ui::github::tick_pr_state(app);
                 }
             }
             AppEvent::Mouse(mouse) => {
