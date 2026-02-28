@@ -49,8 +49,6 @@ pub struct MergeResolveState {
     pub follow_up_selected: usize,
 }
 
-
-
 impl MergeResolveState {
     pub fn refresh(&mut self) {
         // Refresh conflict list

@@ -40,7 +40,9 @@ fn test_clean_repo_status() {
     let output = git(dir.path(), &["status", "--porcelain=v2", "--branch"]);
     assert!(output.contains("# branch.head main"));
     // No modified/untracked lines in a clean repo
-    let has_changes = output.lines().any(|l| l.starts_with("1 ") || l.starts_with("? "));
+    let has_changes = output
+        .lines()
+        .any(|l| l.starts_with("1 ") || l.starts_with("? "));
     assert!(!has_changes, "expected clean repo");
 }
 
@@ -207,7 +209,7 @@ fn test_cli_version_flag() {
         .expect("failed to run zit");
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("zit"));
-    assert!(stdout.contains("0.1.1"));
+    assert!(stdout.contains(env!("CARGO_PKG_VERSION")));
     assert!(output.status.success());
 }
 
@@ -385,14 +387,17 @@ fn test_merge_branch() {
     git(dir.path(), &["add", "."]);
     git(dir.path(), &["commit", "-m", "feature commit"]);
     git(dir.path(), &["checkout", "main"]);
-    git(dir.path(), &["merge", "feature", "--no-ff", "-m", "merge feature"]);
+    git(
+        dir.path(),
+        &["merge", "feature", "--no-ff", "-m", "merge feature"],
+    );
     let log = git(dir.path(), &["log", "--oneline"]);
     assert!(log.contains("merge feature"));
     assert!(log.contains("feature commit"));
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Reset tests  
+// Reset tests
 // ────────────────────────────────────────────────────────────────────────
 
 #[test]
