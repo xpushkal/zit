@@ -19,9 +19,7 @@ export default function Footer() {
               ZenMasters
             </a>
           </p>
-          <p className="text-xs text-gray-600 mt-2">
-            Released under the MIT License.
-          </p>
+          
         </div>
 
         <div className="flex gap-6">

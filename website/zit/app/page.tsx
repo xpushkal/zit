@@ -6,7 +6,6 @@ import Installation from "@/components/Installation";
 import Keybindings from "@/components/Keybindings";
 import Configuration from "@/components/Configuration";
 import Development from "@/components/Development";
-import Troubleshooting from "@/components/Troubleshooting";
 import Architecture from "@/components/Architecture";
 import Footer from "@/components/Footer";
 
@@ -22,7 +21,6 @@ export default function Home() {
       <Configuration />
       <Architecture />
       <Development />
-      <Troubleshooting />
       <Footer />
     </main>
   );
