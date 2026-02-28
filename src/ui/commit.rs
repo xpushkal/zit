@@ -220,9 +220,9 @@ pub fn render(f: &mut Frame, area: Rect, state: &CommitState, ai_loading: bool, 
         if ai_loading {
             Span::styled("⏳ AI generating...", Style::default().fg(Color::Yellow))
         } else if ai_available {
-            Span::styled("Ctrl+G", Style::default().fg(Color::Magenta))
+            Span::styled("G", Style::default().fg(Color::Magenta))
         } else {
-            Span::styled("Ctrl+G", Style::default().fg(Color::DarkGray))
+            Span::styled("G", Style::default().fg(Color::DarkGray))
         },
         if ai_loading {
             Span::raw("")
@@ -245,16 +245,26 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             KeyCode::Char('i') | KeyCode::Enter => {
                 app.commit_state.editing = true;
             }
+            // Mac-friendly: 'g' triggers AI suggest when not editing
+            KeyCode::Char('g') | KeyCode::Char('G') => {
+                if app.ai_client.is_none() {
+                    app.start_ai_setup();
+                } else {
+                    app.start_ai_suggest();
+                }
+            }
             _ => {}
         }
         return Ok(());
     }
 
     // Handle AI suggestion outside the main match to avoid borrow conflicts
-    if key.code == KeyCode::Char('g')
+    // Ctrl+G works while editing, or Shift+G (uppercase) as Mac alternative
+    if (key.code == KeyCode::Char('g')
         && key
             .modifiers
-            .contains(crossterm::event::KeyModifiers::CONTROL)
+            .contains(crossterm::event::KeyModifiers::CONTROL))
+        || key.code == KeyCode::Char('G')
     {
         if app.ai_client.is_none() {
             app.start_ai_setup();

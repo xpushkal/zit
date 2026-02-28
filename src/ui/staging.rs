@@ -370,8 +370,38 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 }
                 state.refresh();
             }
+            KeyCode::Char('A') => {
+                // Mac-friendly alternative for Ctrl+A (stage all)
+                match git::run_git(&["add", "-A"]) {
+                    Ok(_) => status_msg = Some("All files staged".to_string()),
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Failed to stage: {}", err_str));
+                        ai_error = Some(err_str);
+                    }
+                }
+                state.refresh();
+            }
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 // AI diff review for selected file
+                if let Some(file) = state.files.get(state.selected) {
+                    if state.diff_lines.is_empty() {
+                        status_msg = Some("No diff available for this file".to_string());
+                    } else {
+                        let diff_content: String = state
+                            .diff_lines
+                            .iter()
+                            .map(|dl| dl.content.as_str())
+                            .collect::<Vec<&str>>()
+                            .join("\n");
+                        ai_review = Some((file.path.clone(), diff_content));
+                    }
+                } else {
+                    status_msg = Some("No file selected".to_string());
+                }
+            }
+            KeyCode::Char('R') => {
+                // Mac-friendly alternative for Ctrl+R (AI diff review)
                 if let Some(file) = state.files.get(state.selected) {
                     if state.diff_lines.is_empty() {
                         status_msg = Some("No diff available for this file".to_string());

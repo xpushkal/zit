@@ -27,6 +27,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("g", "Open GitHub view"),
             ("a", "Open AI Mentor"),
             ("x", "Open Stash view"),
+            ("m", "Open Merge Resolve view"),
             ("?", "Toggle this help"),
             ("q", "Quit"),
             ("Ctrl+C", "Force quit"),
@@ -35,9 +36,9 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("↑/↓ or j/k", "Navigate files"),
             ("Space", "Toggle stage/unstage"),
             ("h", "Toggle hunk mode"),
-            ("Ctrl+A", "Stage all files"),
+            ("A or Ctrl+A", "Stage all files"),
             ("u", "Unstage all files"),
-            ("Ctrl+R", "AI diff review"),
+            ("R or Ctrl+R", "AI diff review"),
             ("/", "Search files"),
             ("c", "Open Commit view"),
             ("PgDn/PgUp", "Scroll diff"),
@@ -48,7 +49,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("Enter", "New line"),
             ("Ctrl+S", "Submit commit"),
             ("Ctrl+A", "Amend previous commit"),
-            ("Ctrl+G", "Generate AI commit message"),
+            ("G or Ctrl+G", "Generate AI commit message"),
             ("Esc", "Stop editing / Back"),
         ],
         View::Branches => vec![
@@ -107,6 +108,21 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("PgDn/PgUp", "Scroll diff"),
             ("q", "Back to Dashboard"),
         ],
+        View::MergeResolve => vec![
+            ("a", "Accept current (HEAD) changes"),
+            ("i", "Accept incoming changes"),
+            ("m", "Apply AI-suggested resolution"),
+            ("G or Ctrl+G", "Get AI merge suggestion"),
+            ("S or Ctrl+M", "AI merge strategy advice"),
+            ("[/]", "Navigate conflict regions"),
+            ("n/p", "Next/prev conflicted file"),
+            ("Tab", "Cycle panel focus"),
+            ("j/k", "Scroll focused panel"),
+            ("1-5", "Quick pick follow-up action"),
+            ("! or Ctrl+A", "Abort merge"),
+            ("F or Ctrl+F", "Continue/finalize merge"),
+            ("q", "Back to Dashboard"),
+        ],
     };
 
     let view_name = match current_view {
@@ -120,6 +136,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::GitHub => "GitHub",
         View::AiMentor => "AI Mentor",
         View::Stash => "Stash",
+        View::MergeResolve => "Merge Resolve",
     };
 
     let mut lines = vec![

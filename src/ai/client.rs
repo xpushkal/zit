@@ -49,6 +49,16 @@ pub struct RepoContext {
     pub diff_stats: Option<DiffStats>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub conflict_files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conflict_diff: Option<String>,
+    #[serde(default)]
+    pub has_conflicts: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_type: Option<String>,
+    #[serde(default)]
+    pub detached_head: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -373,6 +383,11 @@ impl AiClient {
             unstaged_files: vec![],
             diff_stats: None,
             diff: Some(diff_text),
+            conflict_files: vec![],
+            conflict_diff: None,
+            has_conflicts: false,
+            merge_type: None,
+            detached_head: false,
         };
 
         let request = MentorRequest {
@@ -414,6 +429,66 @@ impl AiClient {
         self.call(&request)
     }
 
+    /// Suggest a merge conflict resolution for a specific file.
+    pub fn suggest_merge_resolution(
+        &self,
+        file_path: &str,
+        conflict_content: &str,
+    ) -> Result<String> {
+        let branch = git::branch::BranchOps::current().ok();
+        let status = git::status::get_status().unwrap_or_default();
+        let conflict_files: Vec<String> = status.conflicts.iter().map(|f| f.path.clone()).collect();
+        let merge_state = git::merge::get_merge_state();
+
+        // Truncate if too long
+        let conflict_text = if conflict_content.len() > DIFF_TRUNCATE_AT {
+            format!("{}...(truncated)", &conflict_content[..DIFF_TRUNCATE_AT])
+        } else {
+            conflict_content.to_string()
+        };
+
+        let context = RepoContext {
+            branch,
+            staged_files: vec![],
+            unstaged_files: vec![],
+            diff_stats: None,
+            diff: None,
+            conflict_files,
+            conflict_diff: Some(conflict_text),
+            has_conflicts: true,
+            merge_type: merge_state.map(|s| s.merge_type.to_string()),
+            detached_head: false,
+        };
+
+        let request = MentorRequest {
+            request_type: "merge_resolve".to_string(),
+            context: Some(context),
+            query: Some(format!(
+                "Resolve the merge conflict in file '{}'. Analyze both sides and recommend the best resolution.",
+                file_path
+            )),
+            error: None,
+        };
+
+        self.call(&request)
+    }
+
+    /// Get AI recommendation for the best merge strategy.
+    pub fn suggest_merge_strategy(&self, query: Option<&str>) -> Result<String> {
+        let ctx = build_repo_context(false)?;
+        let request = MentorRequest {
+            request_type: "merge_strategy".to_string(),
+            context: Some(ctx),
+            query: Some(
+                query
+                    .unwrap_or("What is the safest strategy to integrate these branches?")
+                    .to_string(),
+            ),
+            error: None,
+        };
+        self.call(&request)
+    }
+
     /// Check if the client is configured and reachable (quick check, no API call).
     #[allow(dead_code)] // Public utility — used in tests and available for consumers
     pub fn is_configured(&self) -> bool {
@@ -426,6 +501,7 @@ impl AiClient {
 /// Build repository context from the current git state.
 fn build_repo_context(include_diff: bool) -> Result<RepoContext> {
     let branch = git::branch::BranchOps::current().ok();
+    let detached_head = branch.as_deref() == Some("HEAD");
 
     let status = git::status::get_status().unwrap_or_default();
     let staged_files: Vec<String> = status.staged.iter().map(|f| f.path.clone()).collect();
@@ -435,6 +511,10 @@ fn build_repo_context(include_diff: bool) -> Result<RepoContext> {
         .chain(status.untracked.iter())
         .map(|f| f.path.clone())
         .collect();
+    let conflict_files: Vec<String> = status.conflicts.iter().map(|f| f.path.clone()).collect();
+    let has_conflicts = !conflict_files.is_empty();
+    let merge_state = git::merge::get_merge_state();
+    let merge_type = merge_state.map(|s| s.merge_type.to_string());
 
     let mut diff_text = None;
     let mut diff_stats = None;
@@ -482,6 +562,11 @@ fn build_repo_context(include_diff: bool) -> Result<RepoContext> {
         unstaged_files,
         diff_stats,
         diff: diff_text,
+        conflict_files,
+        conflict_diff: None,
+        has_conflicts,
+        merge_type,
+        detached_head,
     })
 }
 
@@ -595,6 +680,11 @@ mod tests {
                     deletions: 2,
                 }),
                 diff: Some("+fn hello() {}".to_string()),
+                conflict_files: vec![],
+                conflict_diff: None,
+                has_conflicts: false,
+                merge_type: None,
+                detached_head: false,
             }),
             query: None,
             error: None,
@@ -650,6 +740,11 @@ mod tests {
                 unstaged_files: vec![],
                 diff_stats: None,
                 diff: None,
+                conflict_files: vec![],
+                conflict_diff: None,
+                has_conflicts: false,
+                merge_type: None,
+                detached_head: false,
             }),
             query: None,
             error: None,
@@ -662,6 +757,11 @@ mod tests {
                 unstaged_files: vec![],
                 diff_stats: None,
                 diff: None,
+                conflict_files: vec![],
+                conflict_diff: None,
+                has_conflicts: false,
+                merge_type: None,
+                detached_head: false,
             }),
             query: None,
             error: None,
