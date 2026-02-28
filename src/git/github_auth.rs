@@ -420,7 +420,11 @@ fn gh_get(token: &str, url: &str) -> Result<reqwest::blocking::Response> {
         .context("GitHub API request failed")
 }
 
-fn gh_put_json(token: &str, url: &str, body: &serde_json::Value) -> Result<reqwest::blocking::Response> {
+fn gh_put_json(
+    token: &str,
+    url: &str,
+    body: &serde_json::Value,
+) -> Result<reqwest::blocking::Response> {
     let client = reqwest::blocking::Client::new();
     client
         .put(url)
@@ -432,7 +436,11 @@ fn gh_put_json(token: &str, url: &str, body: &serde_json::Value) -> Result<reqwe
         .context("GitHub API request failed")
 }
 
-fn gh_patch_json(token: &str, url: &str, body: &serde_json::Value) -> Result<reqwest::blocking::Response> {
+fn gh_patch_json(
+    token: &str,
+    url: &str,
+    body: &serde_json::Value,
+) -> Result<reqwest::blocking::Response> {
     let client = reqwest::blocking::Client::new();
     client
         .patch(url)
@@ -458,7 +466,8 @@ pub fn list_pull_requests(token: &str, state: &str) -> Result<Vec<PullRequest>> 
         let msg = body["message"].as_str().unwrap_or("Unknown error");
         anyhow::bail!("{}", msg);
     }
-    let prs: Vec<PullRequest> = serde_json::from_value(body).context("Failed to deserialize PR list")?;
+    let prs: Vec<PullRequest> =
+        serde_json::from_value(body).context("Failed to deserialize PR list")?;
     Ok(prs)
 }
 
@@ -494,7 +503,8 @@ pub fn get_check_runs(token: &str, sha: &str) -> Result<CheckRunsResponse> {
         let msg = body["message"].as_str().unwrap_or("Unknown error");
         anyhow::bail!("{}", msg);
     }
-    let runs: CheckRunsResponse = serde_json::from_value(body).context("Failed to deserialize check runs")?;
+    let runs: CheckRunsResponse =
+        serde_json::from_value(body).context("Failed to deserialize check runs")?;
     Ok(runs)
 }
 
@@ -512,7 +522,8 @@ pub fn get_pr_files(token: &str, number: u64) -> Result<Vec<PrFile>> {
         let msg = body["message"].as_str().unwrap_or("Unknown error");
         anyhow::bail!("{}", msg);
     }
-    let files: Vec<PrFile> = serde_json::from_value(body).context("Failed to deserialize PR files")?;
+    let files: Vec<PrFile> =
+        serde_json::from_value(body).context("Failed to deserialize PR files")?;
     Ok(files)
 }
 
@@ -530,7 +541,8 @@ pub fn get_pr_reviews(token: &str, number: u64) -> Result<Vec<PrReview>> {
         let msg = body["message"].as_str().unwrap_or("Unknown error");
         anyhow::bail!("{}", msg);
     }
-    let reviews: Vec<PrReview> = serde_json::from_value(body).context("Failed to deserialize PR reviews")?;
+    let reviews: Vec<PrReview> =
+        serde_json::from_value(body).context("Failed to deserialize PR reviews")?;
     Ok(reviews)
 }
 
@@ -549,7 +561,8 @@ pub fn merge_pull_request(token: &str, number: u64, merge_method: &str) -> Resul
         let msg = resp_body["message"].as_str().unwrap_or("Merge failed");
         anyhow::bail!("{}", msg);
     }
-    let merge: MergeResponse = serde_json::from_value(resp_body).context("Failed to deserialize merge response")?;
+    let merge: MergeResponse =
+        serde_json::from_value(resp_body).context("Failed to deserialize merge response")?;
     Ok(merge)
 }
 

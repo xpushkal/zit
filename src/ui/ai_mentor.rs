@@ -406,10 +406,7 @@ fn render_history(f: &mut Frame, area: Rect, state: &AiMentorState) {
                 format!("[{}] ", entry.timestamp),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(
-                entry.query.chars().take(60).collect::<String>(),
-                style,
-            ),
+            Span::styled(entry.query.chars().take(60).collect::<String>(), style),
         ]));
 
         // Show truncated response preview

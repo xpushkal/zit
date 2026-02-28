@@ -100,7 +100,9 @@ fn apply_patch(patch: &str, cached: bool) -> Result<()> {
         .context("Failed to run git apply")?;
 
     if let Some(ref mut stdin) = child.stdin {
-        stdin.write_all(patch.as_bytes()).context("Failed to write patch to stdin")?;
+        stdin
+            .write_all(patch.as_bytes())
+            .context("Failed to write patch to stdin")?;
     }
 
     let output = child.wait_with_output()?;
@@ -125,7 +127,9 @@ fn apply_patch_reverse(patch: &str) -> Result<()> {
         .context("Failed to run git apply --reverse")?;
 
     if let Some(ref mut stdin) = child.stdin {
-        stdin.write_all(patch.as_bytes()).context("Failed to write patch to stdin")?;
+        stdin
+            .write_all(patch.as_bytes())
+            .context("Failed to write patch to stdin")?;
     }
 
     let output = child.wait_with_output()?;
@@ -352,7 +356,7 @@ index abc..def 100644
         assert_eq!(lines[0].line_type, DiffLineType::Header); // @@ header
         assert_eq!(lines[1].line_type, DiffLineType::Context); // " context"
         assert_eq!(lines[2].line_type, DiffLineType::Removed); // "-removed"
-        assert_eq!(lines[3].line_type, DiffLineType::Added);   // "+added"
+        assert_eq!(lines[3].line_type, DiffLineType::Added); // "+added"
     }
 
     #[test]

@@ -172,11 +172,14 @@ mod tests {
     #[test]
     fn test_parse_reflog_no_message_separator() {
         // When there's no ": " in the action, whole thing is the operation
-        let sample = "abc123def456abc123def456abc123def456abc123\x1fabc123d\x1fcheckout\x1f1 hour ago\n";
+        let sample =
+            "abc123def456abc123def456abc123def456abc123\x1fabc123d\x1fcheckout\x1f1 hour ago\n";
         let mut entries = Vec::new();
         for (i, line) in sample.lines().enumerate() {
             let parts: Vec<&str> = line.split('\x1f').collect();
-            if parts.len() < 4 { continue; }
+            if parts.len() < 4 {
+                continue;
+            }
             let gs = parts[2];
             let (operation, message) = if let Some(idx) = gs.find(": ") {
                 (gs[..idx].to_string(), gs[idx + 2..].to_string())

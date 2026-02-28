@@ -43,9 +43,7 @@ impl GithubConfig {
             return Some(token);
         }
         // Fallback to plaintext config
-        self.oauth_token
-            .clone()
-            .or_else(|| self.pat.clone())
+        self.oauth_token.clone().or_else(|| self.pat.clone())
     }
 }
 
@@ -144,10 +142,16 @@ impl AiConfig {
 
         // Check endpoint
         match self.resolved_endpoint() {
-            None => issues.push("AI endpoint not set — add 'endpoint' to [ai] config or set ZIT_AI_ENDPOINT".to_string()),
+            None => issues.push(
+                "AI endpoint not set — add 'endpoint' to [ai] config or set ZIT_AI_ENDPOINT"
+                    .to_string(),
+            ),
             Some(ref url) => {
                 if !url.starts_with("https://") && !url.starts_with("http://") {
-                    issues.push(format!("AI endpoint must start with https:// or http://, got: {}", url));
+                    issues.push(format!(
+                        "AI endpoint must start with https:// or http://, got: {}",
+                        url
+                    ));
                 }
                 if !url.contains('.') {
                     issues.push("AI endpoint URL doesn't look like a valid domain".to_string());
@@ -157,7 +161,10 @@ impl AiConfig {
 
         // Check API key
         if self.resolved_api_key().is_none() {
-            issues.push("AI API key not set — add 'api_key' to [ai] config or set ZIT_AI_API_KEY".to_string());
+            issues.push(
+                "AI API key not set — add 'api_key' to [ai] config or set ZIT_AI_API_KEY"
+                    .to_string(),
+            );
         } else if let Some(ref key) = self.resolved_api_key() {
             if key.len() < 8 {
                 issues.push("AI API key seems too short (< 8 chars)".to_string());
@@ -169,7 +176,9 @@ impl AiConfig {
             if timeout == 0 {
                 issues.push("AI timeout_secs must be > 0".to_string());
             } else if timeout > 120 {
-                issues.push("AI timeout_secs > 120s is unusually high — consider lowering".to_string());
+                issues.push(
+                    "AI timeout_secs > 120s is unusually high — consider lowering".to_string(),
+                );
             }
         }
 
@@ -339,7 +348,9 @@ mod tests {
             timeout_secs: Some(30),
         };
         let issues = a.validate();
-        assert!(issues.iter().any(|i| i.contains("must start with https://")));
+        assert!(issues
+            .iter()
+            .any(|i| i.contains("must start with https://")));
     }
 
     #[test]
@@ -420,13 +431,19 @@ mod tests {
     #[test]
     fn test_config_toml_roundtrip() {
         let config = Config {
-            general: GeneralConfig { tick_rate_ms: 500, confirm_destructive: false },
+            general: GeneralConfig {
+                tick_rate_ms: 500,
+                confirm_destructive: false,
+            },
             github: GithubConfig {
                 pat: Some("ghp_test".to_string()),
                 oauth_token: None,
                 username: Some("user".to_string()),
             },
-            ui: UiConfig { color_scheme: "dark".to_string(), show_help_hints: false },
+            ui: UiConfig {
+                color_scheme: "dark".to_string(),
+                show_help_hints: false,
+            },
             ai: AiConfig {
                 enabled: true,
                 endpoint: Some("https://x.com".to_string()),

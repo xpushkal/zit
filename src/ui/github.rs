@@ -1085,8 +1085,8 @@ fn start_load_prs(app: &mut crate::app::App) {
     let filter = app.github_state.pr_state.filter.api_state().to_string();
     let bg = app.github_state.pr_state.bg_result.clone();
     std::thread::spawn(move || {
-        let result = git::github_auth::list_pull_requests(&token, &filter)
-            .map_err(|e| e.to_string());
+        let result =
+            git::github_auth::list_pull_requests(&token, &filter).map_err(|e| e.to_string());
         if let Ok(mut r) = bg.lock() {
             *r = Some(PrBgResult::PrList(result));
         }
@@ -1102,17 +1102,18 @@ fn start_load_pr_detail(app: &mut crate::app::App, number: u64) {
     let token = app.config.github.get_token().unwrap_or_default();
     let bg = app.github_state.pr_state.bg_result.clone();
     std::thread::spawn(move || {
-        let pr = git::github_auth::get_pull_request(&token, number)
-            .map_err(|e| e.to_string());
+        let pr = git::github_auth::get_pull_request(&token, number).map_err(|e| e.to_string());
         let sha = pr.as_ref().map(|p| p.head.sha.clone()).unwrap_or_default();
-        let checks = git::github_auth::get_check_runs(&token, &sha)
-            .map_err(|e| e.to_string());
-        let files = git::github_auth::get_pr_files(&token, number)
-            .map_err(|e| e.to_string());
-        let reviews = git::github_auth::get_pr_reviews(&token, number)
-            .map_err(|e| e.to_string());
+        let checks = git::github_auth::get_check_runs(&token, &sha).map_err(|e| e.to_string());
+        let files = git::github_auth::get_pr_files(&token, number).map_err(|e| e.to_string());
+        let reviews = git::github_auth::get_pr_reviews(&token, number).map_err(|e| e.to_string());
         if let Ok(mut r) = bg.lock() {
-            *r = Some(PrBgResult::PrDetail { pr, checks, files, reviews });
+            *r = Some(PrBgResult::PrDetail {
+                pr,
+                checks,
+                files,
+                reviews,
+            });
         }
     });
 }
@@ -1145,7 +1146,12 @@ pub fn tick_pr_state(app: &mut crate::app::App) {
             PrBgResult::PrList(Err(e)) => {
                 app.github_state.pr_state.error = Some(e);
             }
-            PrBgResult::PrDetail { pr, checks, files, reviews } => {
+            PrBgResult::PrDetail {
+                pr,
+                checks,
+                files,
+                reviews,
+            } => {
                 match pr {
                     Ok(p) => {
                         app.github_state.pr_state.detail_pr = Some(p);
@@ -1158,18 +1164,15 @@ pub fn tick_pr_state(app: &mut crate::app::App) {
                 if let Ok(c) = checks {
                     app.github_state.pr_state.detail_checks = Some(c);
                 }
-                match files {
-                    Ok(f) => {
-                        app.github_state.pr_state.detail_files = f;
-                        app.github_state.pr_state.files_list_state.select(
-                            if app.github_state.pr_state.detail_files.is_empty() {
-                                None
-                            } else {
-                                Some(0)
-                            },
-                        );
-                    }
-                    Err(_) => {}
+                if let Ok(f) = files {
+                    app.github_state.pr_state.detail_files = f;
+                    app.github_state.pr_state.files_list_state.select(
+                        if app.github_state.pr_state.detail_files.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        },
+                    );
                 }
                 if let Ok(r) = reviews {
                     app.github_state.pr_state.detail_reviews = r;
@@ -1190,8 +1193,7 @@ pub fn tick_pr_state(app: &mut crate::app::App) {
                 app.github_state.pr_state.error = Some(format!("Merge failed: {}", e));
             }
             PrBgResult::CloseResult(Ok(pr)) => {
-                app.github_state.status =
-                    Some(format!("✓ PR #{} closed", pr.number));
+                app.github_state.status = Some(format!("✓ PR #{} closed", pr.number));
                 if let GitHubView::PullRequestDetail(n) = app.github_state.view {
                     start_load_pr_detail(app, n);
                 }
@@ -1228,7 +1230,11 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!("  ({} {})", pr_count, state.pr_state.filter.label().to_lowercase()),
+            format!(
+                "  ({} {})",
+                pr_count,
+                state.pr_state.filter.label().to_lowercase()
+            ),
             Style::default().fg(Color::DarkGray),
         ),
     ]))
@@ -1240,7 +1246,7 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
     f.render_widget(title, chunks[0]);
 
     // Filter bar
-    let filters = vec!["Open", "Closed", "All"];
+    let filters = ["Open", "Closed", "All"];
     let selected_idx = match state.pr_state.filter {
         PrFilter::Open => 0,
         PrFilter::Closed => 1,
@@ -1269,7 +1275,10 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
     if state.pr_state.loading {
         let loading = Paragraph::new(Line::from(vec![
             Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
-            Span::styled("Loading pull requests...", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "Loading pull requests...",
+                Style::default().fg(Color::DarkGray),
+            ),
         ]))
         .block(
             Block::default()
@@ -1278,12 +1287,10 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
         );
         f.render_widget(loading, chunks[2]);
     } else if state.pr_state.prs.is_empty() {
-        let empty = Paragraph::new(Line::from(vec![
-            Span::styled(
-                "  No pull requests found.",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]))
+        let empty = Paragraph::new(Line::from(vec![Span::styled(
+            "  No pull requests found.",
+            Style::default().fg(Color::DarkGray),
+        )]))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -1306,10 +1313,8 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
                     Span::styled("  🔴 ", Style::default())
                 };
 
-                let number = Span::styled(
-                    format!("#{} ", pr.number),
-                    Style::default().fg(Color::Cyan),
-                );
+                let number =
+                    Span::styled(format!("#{} ", pr.number), Style::default().fg(Color::Cyan));
                 let title_text = Span::styled(
                     pr.title.chars().take(60).collect::<String>(),
                     Style::default().fg(Color::White),
@@ -1319,11 +1324,17 @@ fn render_pull_requests(f: &mut Frame, area: Rect, state: &mut GitHubState) {
                     Style::default().fg(Color::DarkGray),
                 );
                 let stats = Span::styled(
-                    format!("  +{} -{}", pr.additions.unwrap_or(0), pr.deletions.unwrap_or(0)),
+                    format!(
+                        "  +{} -{}",
+                        pr.additions.unwrap_or(0),
+                        pr.deletions.unwrap_or(0)
+                    ),
                     Style::default().fg(Color::DarkGray),
                 );
 
-                ListItem::new(Line::from(vec![state_icon, number, title_text, author, stats]))
+                ListItem::new(Line::from(vec![
+                    state_icon, number, title_text, author, stats,
+                ]))
             })
             .collect();
 
@@ -1386,7 +1397,10 @@ fn render_pr_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
     if state.pr_state.loading && pr.is_none() {
         let loading = Paragraph::new(Line::from(vec![
             Span::styled("  ⏳ ", Style::default().fg(Color::Yellow)),
-            Span::styled("Loading PR details...", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "Loading PR details...",
+                Style::default().fg(Color::DarkGray),
+            ),
         ]))
         .block(
             Block::default()
@@ -1395,8 +1409,18 @@ fn render_pr_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
         );
         f.render_widget(loading, chunks[0]);
     } else if let Some(pr) = pr {
-        let state_color = if pr.state == "open" { Color::Green } else if pr.merged_at.is_some() { Color::Magenta } else { Color::Red };
-        let state_label = if pr.merged_at.is_some() { "MERGED" } else { &pr.state.to_uppercase() };
+        let state_color = if pr.state == "open" {
+            Color::Green
+        } else if pr.merged_at.is_some() {
+            Color::Magenta
+        } else {
+            Color::Red
+        };
+        let state_label = if pr.merged_at.is_some() {
+            "MERGED"
+        } else {
+            &pr.state.to_uppercase()
+        };
         let mergeable_info = match pr.mergeable {
             Some(true) => Span::styled(" ✓ Mergeable", Style::default().fg(Color::Green)),
             Some(false) => Span::styled(" ✗ Conflicts", Style::default().fg(Color::Red)),
@@ -1437,15 +1461,15 @@ fn render_pr_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
                 ),
                 mergeable_info,
             ]),
-            Line::from(vec![
-                Span::styled(
-                    format!(
-                        "  {} files changed  +{} -{}", 
-                        pr.changed_files.unwrap_or(0), pr.additions.unwrap_or(0), pr.deletions.unwrap_or(0)
-                    ),
-                    Style::default().fg(Color::DarkGray),
+            Line::from(vec![Span::styled(
+                format!(
+                    "  {} files changed  +{} -{}",
+                    pr.changed_files.unwrap_or(0),
+                    pr.additions.unwrap_or(0),
+                    pr.deletions.unwrap_or(0)
                 ),
-            ]),
+                Style::default().fg(Color::DarkGray),
+            )]),
         ])
         .block(
             Block::default()
@@ -1456,29 +1480,34 @@ fn render_pr_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
     }
 
     // Tab bar
-    let tab_titles = vec!["Overview", "Files", "Reviews"];
+    let tab_titles = ["Overview", "Files", "Reviews"];
     let selected_tab = match state.pr_state.detail_tab {
         PrDetailTab::Overview => 0,
         PrDetailTab::Files => 1,
         PrDetailTab::Reviews => 2,
     };
-    let tabs = Tabs::new(tab_titles.iter().map(|t| Line::from(*t)).collect::<Vec<_>>())
-        .block(
-            Block::default()
-                .title(Span::styled(
-                    " [Tab] Switch ",
-                    Style::default().fg(Color::DarkGray),
-                ))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .select(selected_tab)
-        .style(Style::default().fg(Color::DarkGray))
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        );
+    let tabs = Tabs::new(
+        tab_titles
+            .iter()
+            .map(|t| Line::from(*t))
+            .collect::<Vec<_>>(),
+    )
+    .block(
+        Block::default()
+            .title(Span::styled(
+                " [Tab] Switch ",
+                Style::default().fg(Color::DarkGray),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::DarkGray)),
+    )
+    .select(selected_tab)
+    .style(Style::default().fg(Color::DarkGray))
+    .highlight_style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
     f.render_widget(tabs, chunks[1]);
 
     // Tab content
@@ -1546,14 +1575,12 @@ fn render_pr_overview(f: &mut Frame, area: Rect, state: &GitHubState) {
 
     // CI Checks
     if let Some(ref checks) = state.pr_state.detail_checks {
-        let mut lines = vec![Line::from(vec![
-            Span::styled(
-                format!("  Checks ({} total)", checks.total_count),
-                Style::default()
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])];
+        let mut lines = vec![Line::from(vec![Span::styled(
+            format!("  Checks ({} total)", checks.total_count),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )])];
 
         for run in checks.check_runs.iter().take(5) {
             let icon = match run.conclusion.as_deref() {
@@ -1566,10 +1593,7 @@ fn render_pr_overview(f: &mut Frame, area: Rect, state: &GitHubState) {
             };
             let name = Span::styled(&run.name, Style::default().fg(Color::White));
             let status = Span::styled(
-                format!(
-                    "  ({})",
-                    run.conclusion.as_deref().unwrap_or(&run.status)
-                ),
+                format!("  ({})", run.conclusion.as_deref().unwrap_or(&run.status)),
                 Style::default().fg(Color::DarkGray),
             );
             lines.push(Line::from(vec![icon, name, status]));
@@ -1611,13 +1635,15 @@ fn render_pr_overview(f: &mut Frame, area: Rect, state: &GitHubState) {
 
     // Body
     if let Some(ref pr) = state.pr_state.detail_pr {
-        let body_text = pr
-            .body
-            .as_deref()
-            .unwrap_or("No description provided.");
+        let body_text = pr.body.as_deref().unwrap_or("No description provided.");
         let body_lines: Vec<Line> = body_text
             .lines()
-            .map(|l| Line::from(Span::styled(format!("  {}", l), Style::default().fg(Color::White))))
+            .map(|l| {
+                Line::from(Span::styled(
+                    format!("  {}", l),
+                    Style::default().fg(Color::White),
+                ))
+            })
             .collect();
 
         let body = Paragraph::new(body_lines)
@@ -1703,10 +1729,7 @@ fn render_pr_reviews(f: &mut Frame, area: Rect, state: &GitHubState) {
         ))
         .block(
             Block::default()
-                .title(Span::styled(
-                    " Reviews ",
-                    Style::default().fg(Color::White),
-                ))
+                .title(Span::styled(" Reviews ", Style::default().fg(Color::White)))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         );
@@ -1822,39 +1845,35 @@ fn handle_pr_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Res
             app.github_state.pr_state.detail_tab = app.github_state.pr_state.detail_tab.next();
             app.github_state.pr_state.detail_scroll = 0;
         }
-        KeyCode::Up | KeyCode::Char('k') => {
-            match app.github_state.pr_state.detail_tab {
-                PrDetailTab::Files => {
-                    if app.github_state.pr_state.files_selected > 0 {
-                        app.github_state.pr_state.files_selected -= 1;
-                        let sel = app.github_state.pr_state.files_selected;
-                        app.github_state.pr_state.files_list_state.select(Some(sel));
-                    }
-                }
-                _ => {
-                    if app.github_state.pr_state.detail_scroll > 0 {
-                        app.github_state.pr_state.detail_scroll -= 1;
-                    }
+        KeyCode::Up | KeyCode::Char('k') => match app.github_state.pr_state.detail_tab {
+            PrDetailTab::Files => {
+                if app.github_state.pr_state.files_selected > 0 {
+                    app.github_state.pr_state.files_selected -= 1;
+                    let sel = app.github_state.pr_state.files_selected;
+                    app.github_state.pr_state.files_list_state.select(Some(sel));
                 }
             }
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            match app.github_state.pr_state.detail_tab {
-                PrDetailTab::Files => {
-                    if !app.github_state.pr_state.detail_files.is_empty()
-                        && app.github_state.pr_state.files_selected + 1
-                            < app.github_state.pr_state.detail_files.len()
-                    {
-                        app.github_state.pr_state.files_selected += 1;
-                        let sel = app.github_state.pr_state.files_selected;
-                        app.github_state.pr_state.files_list_state.select(Some(sel));
-                    }
-                }
-                _ => {
-                    app.github_state.pr_state.detail_scroll += 1;
+            _ => {
+                if app.github_state.pr_state.detail_scroll > 0 {
+                    app.github_state.pr_state.detail_scroll -= 1;
                 }
             }
-        }
+        },
+        KeyCode::Down | KeyCode::Char('j') => match app.github_state.pr_state.detail_tab {
+            PrDetailTab::Files => {
+                if !app.github_state.pr_state.detail_files.is_empty()
+                    && app.github_state.pr_state.files_selected + 1
+                        < app.github_state.pr_state.detail_files.len()
+                {
+                    app.github_state.pr_state.files_selected += 1;
+                    let sel = app.github_state.pr_state.files_selected;
+                    app.github_state.pr_state.files_list_state.select(Some(sel));
+                }
+            }
+            _ => {
+                app.github_state.pr_state.detail_scroll += 1;
+            }
+        },
         KeyCode::Char('m') => {
             // Merge PR
             if let Some(pr) = app.github_state.pr_state.detail_pr.as_ref() {
@@ -1868,18 +1887,14 @@ fn handle_pr_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Res
                             number,
                             app.github_state.pr_state.merge_method.display()
                         ),
-                        on_confirm: crate::app::ConfirmAction::MergePullRequest {
-                            number,
-                            method,
-                        },
+                        on_confirm: crate::app::ConfirmAction::MergePullRequest { number, method },
                     };
                 }
             }
         }
         KeyCode::Char('M') => {
             // Cycle merge method
-            app.github_state.pr_state.merge_method =
-                app.github_state.pr_state.merge_method.next();
+            app.github_state.pr_state.merge_method = app.github_state.pr_state.merge_method.next();
         }
         KeyCode::Char('c') => {
             // Close PR
@@ -1903,9 +1918,13 @@ fn handle_pr_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Res
                 #[cfg(target_os = "macos")]
                 let _ = std::process::Command::new("open").arg(&pr.html_url).spawn();
                 #[cfg(target_os = "linux")]
-                let _ = std::process::Command::new("xdg-open").arg(&pr.html_url).spawn();
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(&pr.html_url)
+                    .spawn();
                 #[cfg(target_os = "windows")]
-                let _ = std::process::Command::new("cmd").args(["/C", "start", &pr.html_url]).spawn();
+                let _ = std::process::Command::new("cmd")
+                    .args(["/C", "start", &pr.html_url])
+                    .spawn();
             }
         }
         KeyCode::Char('r') => {

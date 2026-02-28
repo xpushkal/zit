@@ -197,9 +197,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 // Apply stash (keep in list)
                 if let Some(entry) = state.entries.get(state.selected) {
                     match git::stash::stash_apply(entry.index) {
-                        Ok(_) => {
-                            status_msg = Some(format!("Applied stash@{{{}}}", entry.index))
-                        }
+                        Ok(_) => status_msg = Some(format!("Applied stash@{{{}}}", entry.index)),
                         Err(e) => {
                             let err_str = e.to_string();
                             status_msg = Some(format!("Apply failed: {}", err_str));
@@ -213,9 +211,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 // Drop stash
                 if let Some(entry) = state.entries.get(state.selected) {
                     match git::stash::stash_drop(entry.index) {
-                        Ok(_) => {
-                            status_msg = Some(format!("Dropped stash@{{{}}}", entry.index))
-                        }
+                        Ok(_) => status_msg = Some(format!("Dropped stash@{{{}}}", entry.index)),
                         Err(e) => {
                             let err_str = e.to_string();
                             status_msg = Some(format!("Drop failed: {}", err_str));

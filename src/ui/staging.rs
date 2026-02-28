@@ -296,7 +296,8 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                             match result {
                                 Ok(_) => {
                                     let action = if file.is_staged { "Unstaged" } else { "Staged" };
-                                    status_msg = Some(format!("{} hunk {}", action, state.hunk_index + 1));
+                                    status_msg =
+                                        Some(format!("{} hunk {}", action, state.hunk_index + 1));
                                 }
                                 Err(e) => {
                                     let err_str = e.to_string();
@@ -327,127 +328,127 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 _ => {}
             }
         } else {
-        match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                if state.selected > 0 {
-                    state.selected -= 1;
-                    state.list_state.select(Some(state.selected));
-                    state.update_diff();
+            match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if state.selected > 0 {
+                        state.selected -= 1;
+                        state.list_state.select(Some(state.selected));
+                        state.update_diff();
+                    }
                 }
-            }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if state.selected + 1 < state.files.len() {
-                    state.selected += 1;
-                    state.list_state.select(Some(state.selected));
-                    state.update_diff();
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if state.selected + 1 < state.files.len() {
+                        state.selected += 1;
+                        state.list_state.select(Some(state.selected));
+                        state.update_diff();
+                    }
                 }
-            }
-            KeyCode::Char(' ') => {
-                // Toggle stage/unstage
-                if let Some(file) = state.files.get(state.selected).cloned() {
-                    let result = if file.is_staged {
-                        git::run_git(&["restore", "--staged", &file.path])
-                    } else {
-                        git::run_git(&["add", &file.path])
-                    };
-                    if let Err(e) = result {
-                        let err_str = e.to_string();
-                        status_msg = Some(format!("Error: {}", err_str));
-                        ai_error = Some(err_str);
+                KeyCode::Char(' ') => {
+                    // Toggle stage/unstage
+                    if let Some(file) = state.files.get(state.selected).cloned() {
+                        let result = if file.is_staged {
+                            git::run_git(&["restore", "--staged", &file.path])
+                        } else {
+                            git::run_git(&["add", &file.path])
+                        };
+                        if let Err(e) = result {
+                            let err_str = e.to_string();
+                            status_msg = Some(format!("Error: {}", err_str));
+                            ai_error = Some(err_str);
+                        }
+                        state.refresh();
+                    }
+                }
+                KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // Stage all
+                    match git::run_git(&["add", "-A"]) {
+                        Ok(_) => status_msg = Some("All files staged".to_string()),
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            status_msg = Some(format!("Failed to stage: {}", err_str));
+                            ai_error = Some(err_str);
+                        }
                     }
                     state.refresh();
                 }
-            }
-            KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // Stage all
-                match git::run_git(&["add", "-A"]) {
-                    Ok(_) => status_msg = Some("All files staged".to_string()),
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        status_msg = Some(format!("Failed to stage: {}", err_str));
-                        ai_error = Some(err_str);
+                KeyCode::Char('A') => {
+                    // Mac-friendly alternative for Ctrl+A (stage all)
+                    match git::run_git(&["add", "-A"]) {
+                        Ok(_) => status_msg = Some("All files staged".to_string()),
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            status_msg = Some(format!("Failed to stage: {}", err_str));
+                            ai_error = Some(err_str);
+                        }
                     }
+                    state.refresh();
                 }
-                state.refresh();
-            }
-            KeyCode::Char('A') => {
-                // Mac-friendly alternative for Ctrl+A (stage all)
-                match git::run_git(&["add", "-A"]) {
-                    Ok(_) => status_msg = Some("All files staged".to_string()),
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        status_msg = Some(format!("Failed to stage: {}", err_str));
-                        ai_error = Some(err_str);
-                    }
-                }
-                state.refresh();
-            }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                // AI diff review for selected file
-                if let Some(file) = state.files.get(state.selected) {
-                    if state.diff_lines.is_empty() {
-                        status_msg = Some("No diff available for this file".to_string());
+                KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    // AI diff review for selected file
+                    if let Some(file) = state.files.get(state.selected) {
+                        if state.diff_lines.is_empty() {
+                            status_msg = Some("No diff available for this file".to_string());
+                        } else {
+                            let diff_content: String = state
+                                .diff_lines
+                                .iter()
+                                .map(|dl| dl.content.as_str())
+                                .collect::<Vec<&str>>()
+                                .join("\n");
+                            ai_review = Some((file.path.clone(), diff_content));
+                        }
                     } else {
-                        let diff_content: String = state
-                            .diff_lines
-                            .iter()
-                            .map(|dl| dl.content.as_str())
-                            .collect::<Vec<&str>>()
-                            .join("\n");
-                        ai_review = Some((file.path.clone(), diff_content));
+                        status_msg = Some("No file selected".to_string());
                     }
-                } else {
-                    status_msg = Some("No file selected".to_string());
                 }
-            }
-            KeyCode::Char('R') => {
-                // Mac-friendly alternative for Ctrl+R (AI diff review)
-                if let Some(file) = state.files.get(state.selected) {
-                    if state.diff_lines.is_empty() {
-                        status_msg = Some("No diff available for this file".to_string());
+                KeyCode::Char('R') => {
+                    // Mac-friendly alternative for Ctrl+R (AI diff review)
+                    if let Some(file) = state.files.get(state.selected) {
+                        if state.diff_lines.is_empty() {
+                            status_msg = Some("No diff available for this file".to_string());
+                        } else {
+                            let diff_content: String = state
+                                .diff_lines
+                                .iter()
+                                .map(|dl| dl.content.as_str())
+                                .collect::<Vec<&str>>()
+                                .join("\n");
+                            ai_review = Some((file.path.clone(), diff_content));
+                        }
                     } else {
-                        let diff_content: String = state
-                            .diff_lines
-                            .iter()
-                            .map(|dl| dl.content.as_str())
-                            .collect::<Vec<&str>>()
-                            .join("\n");
-                        ai_review = Some((file.path.clone(), diff_content));
-                    }
-                } else {
-                    status_msg = Some("No file selected".to_string());
-                }
-            }
-            KeyCode::Char('u') => {
-                // Unstage all
-                match git::run_git(&["reset", "HEAD"]) {
-                    Ok(_) => status_msg = Some("All files unstaged".to_string()),
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        status_msg = Some(format!("Failed to unstage: {}", err_str));
-                        ai_error = Some(err_str);
+                        status_msg = Some("No file selected".to_string());
                     }
                 }
-                state.refresh();
+                KeyCode::Char('u') => {
+                    // Unstage all
+                    match git::run_git(&["reset", "HEAD"]) {
+                        Ok(_) => status_msg = Some("All files unstaged".to_string()),
+                        Err(e) => {
+                            let err_str = e.to_string();
+                            status_msg = Some(format!("Failed to unstage: {}", err_str));
+                            ai_error = Some(err_str);
+                        }
+                    }
+                    state.refresh();
+                }
+                KeyCode::Char('/') => {
+                    // handled below after borrow is released
+                }
+                KeyCode::Char('h') => {
+                    // Enter hunk mode
+                    state.enter_hunk_mode();
+                }
+                KeyCode::Char('c') => {
+                    // handled below after borrow is released
+                }
+                KeyCode::PageDown => {
+                    state.diff_scroll = state.diff_scroll.saturating_add(10);
+                }
+                KeyCode::PageUp => {
+                    state.diff_scroll = state.diff_scroll.saturating_sub(10);
+                }
+                _ => {}
             }
-            KeyCode::Char('/') => {
-                // handled below after borrow is released
-            }
-            KeyCode::Char('h') => {
-                // Enter hunk mode
-                state.enter_hunk_mode();
-            }
-            KeyCode::Char('c') => {
-                // handled below after borrow is released
-            }
-            KeyCode::PageDown => {
-                state.diff_scroll = state.diff_scroll.saturating_add(10);
-            }
-            KeyCode::PageUp => {
-                state.diff_scroll = state.diff_scroll.saturating_sub(10);
-            }
-            _ => {}
-        }
         } // close else block for non-hunk mode
     } // release mutable borrow of staging_state
 

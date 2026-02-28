@@ -15,6 +15,7 @@ use crate::git;
 // ─── State ─────────────────────────────────────────────────────
 
 /// State for the merge conflict resolution view.
+#[derive(Default)]
 pub struct MergeResolveState {
     /// All conflicted files in the repo.
     pub conflicted_files: Vec<git::FileEntry>,
@@ -48,28 +49,7 @@ pub struct MergeResolveState {
     pub follow_up_selected: usize,
 }
 
-impl Default for MergeResolveState {
-    fn default() -> Self {
-        Self {
-            conflicted_files: Vec::new(),
-            selected_file: 0,
-            conflict_regions: Vec::new(),
-            selected_region: 0,
-            raw_conflict_content: None,
-            total_lines: 0,
-            ai_suggestion: None,
-            ai_recommendation: None,
-            ai_resolved_content: None,
-            merge_state: None,
-            scroll_left: 0,
-            scroll_right: 0,
-            scroll_center: 0,
-            focused_panel: 0,
-            follow_ups: Vec::new(),
-            follow_up_selected: 0,
-        }
-    }
-}
+
 
 impl MergeResolveState {
     pub fn refresh(&mut self) {
@@ -130,7 +110,7 @@ pub fn render(
         .constraints([
             Constraint::Length(3), // Title bar
             Constraint::Length(3), // File selector
-            Constraint::Min(8),   // Main three-panel area
+            Constraint::Min(8),    // Main three-panel area
             Constraint::Length(5), // Follow-up suggestions
             Constraint::Length(1), // Key hints
         ])
@@ -210,9 +190,7 @@ fn render_title_bar(f: &mut Frame, area: Rect, state: &MergeResolveState) {
     let title = Paragraph::new(Line::from(vec![
         Span::styled(
             "⚔ Merge Conflict Resolution",
-            Style::default()
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             merge_type_str,
@@ -222,18 +200,11 @@ fn render_title_bar(f: &mut Frame, area: Rect, state: &MergeResolveState) {
         ),
         Span::raw("  "),
         Span::styled(
-            format!(
-                "File {}/{} ",
-                state.selected_file + 1,
-                conflict_count
-            ),
+            format!("File {}/{} ", state.selected_file + 1, conflict_count),
             Style::default().fg(Color::Cyan),
         ),
         Span::styled(
-            format!(
-                "│ {} conflict region(s)",
-                state.conflict_regions.len()
-            ),
+            format!("│ {} conflict region(s)", state.conflict_regions.len()),
             Style::default().fg(Color::Yellow),
         ),
     ]))
@@ -487,10 +458,7 @@ fn render_ai_panel(
             } else {
                 Style::default().fg(Color::Gray)
             };
-            display_lines.push(Line::from(Span::styled(
-                format!("  {}", line),
-                style,
-            )));
+            display_lines.push(Line::from(Span::styled(format!("  {}", line), style)));
         }
 
         display_lines
@@ -578,7 +546,10 @@ fn render_follow_ups(f: &mut Frame, area: Rect, state: &MergeResolveState) {
                 Style::default().fg(Color::Gray)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{}{}", prefix, i + 1), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("{}{}", prefix, i + 1),
+                    Style::default().fg(Color::Yellow),
+                ),
                 Span::raw(". "),
                 Span::styled(&item.label, style),
                 Span::styled(
@@ -949,9 +920,7 @@ fn resolve_current_region(app: &mut crate::app::App, choice: &str) -> anyhow::Re
                                                 label: "Review changes".to_string(),
                                                 description: "Go to staging view to review"
                                                     .to_string(),
-                                                action: FollowUpAction::SwitchToView(
-                                                    View::Staging,
-                                                ),
+                                                action: FollowUpAction::SwitchToView(View::Staging),
                                             },
                                             FollowUpItem {
                                                 label: "Commit now".to_string(),

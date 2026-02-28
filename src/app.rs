@@ -66,15 +66,15 @@ pub struct FollowUpItem {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum FollowUpAction {
-    ApplyResolution(String),   // file path
-    StageFile(String),         // file path
+    ApplyResolution(String), // file path
+    StageFile(String),       // file path
     CommitNow,
     AbortMerge,
     ContinueMerge,
     ViewNextConflict,
-    AskAiMore(String),         // context/question
+    AskAiMore(String), // context/question
     SwitchToView(View),
-    RunGitCommand(Vec<String>),// args for git
+    RunGitCommand(Vec<String>), // args for git
     EditCommitMessage,
     RegenerateAiSuggestion,
 }
@@ -118,7 +118,7 @@ pub enum AiAction {
     ReviewDiff(String), // file path being reviewed
     AskQuestion,
     Learn,
-    MergeResolve(String),  // file path being resolved
+    MergeResolve(String), // file path being resolved
     MergeStrategy,
 }
 
@@ -512,34 +512,30 @@ impl App {
                 }
                 self.stash_state.refresh();
             }
-            ConfirmAction::AbortMerge => {
-                match git::merge::abort_merge() {
-                    Ok(()) => {
-                        self.set_status("Merge aborted successfully");
-                        self.view = View::Dashboard;
-                        self.dashboard_state.refresh();
-                    }
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        self.set_status(format!("Error aborting merge: {}", err_str));
-                        self.start_ai_error_explain(err_str);
-                    }
+            ConfirmAction::AbortMerge => match git::merge::abort_merge() {
+                Ok(()) => {
+                    self.set_status("Merge aborted successfully");
+                    self.view = View::Dashboard;
+                    self.dashboard_state.refresh();
                 }
-            }
-            ConfirmAction::ContinueMerge => {
-                match git::merge::continue_merge() {
-                    Ok(()) => {
-                        self.set_status("Merge completed successfully!");
-                        self.view = View::Dashboard;
-                        self.dashboard_state.refresh();
-                    }
-                    Err(e) => {
-                        let err_str = e.to_string();
-                        self.set_status(format!("Error continuing merge: {}", err_str));
-                        self.start_ai_error_explain(err_str);
-                    }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    self.set_status(format!("Error aborting merge: {}", err_str));
+                    self.start_ai_error_explain(err_str);
                 }
-            }
+            },
+            ConfirmAction::ContinueMerge => match git::merge::continue_merge() {
+                Ok(()) => {
+                    self.set_status("Merge completed successfully!");
+                    self.view = View::Dashboard;
+                    self.dashboard_state.refresh();
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    self.set_status(format!("Error continuing merge: {}", err_str));
+                    self.start_ai_error_explain(err_str);
+                }
+            },
             ConfirmAction::MergePullRequest { number, method } => {
                 if let Some(token) = self.config.github.get_token() {
                     self.github_state.pr_state.loading = true;
@@ -662,7 +658,7 @@ impl App {
                 self.config.ai.api_key = Some(api_key);
                 // Save to disk
                 match self.config.save() {
-                    Ok(()) => {},
+                    Ok(()) => {}
                     Err(e) => self.set_status(format!("⚠ Config in memory but save failed: {}", e)),
                 }
                 // Recreate AI client
@@ -980,12 +976,10 @@ impl App {
                     }
                 }
             }
-            FollowUpAction::StageFile(path) => {
-                match git::run_git(&["add", &path]) {
-                    Ok(_) => self.set_status(format!("✓ Staged: {}", path)),
-                    Err(e) => self.set_status(format!("Error staging: {}", e)),
-                }
-            }
+            FollowUpAction::StageFile(path) => match git::run_git(&["add", &path]) {
+                Ok(_) => self.set_status(format!("✓ Staged: {}", path)),
+                Err(e) => self.set_status(format!("Error staging: {}", e)),
+            },
             FollowUpAction::CommitNow => {
                 self.view = View::Commit;
                 self.commit_state.refresh();
@@ -1092,20 +1086,16 @@ impl App {
                             );
                         }
                         Some(AiAction::ReviewDiff(file_path)) => {
-                            let msg = format!(
-                                "── AI Diff Review: {} ──\n\n{}",
-                                file_path, response
-                            );
+                            let msg =
+                                format!("── AI Diff Review: {} ──\n\n{}", file_path, response);
                             self.popup = Popup::Message {
                                 title: "🤖 AI Diff Review".to_string(),
                                 message: msg,
                             };
                             self.set_status("✓ AI diff review ready");
                             // Store in history
-                            self.ai_mentor_state.add_history(
-                                format!("Review: {}", file_path),
-                                response.clone(),
-                            );
+                            self.ai_mentor_state
+                                .add_history(format!("Review: {}", file_path), response.clone());
                         }
                         Some(AiAction::AskQuestion) => {
                             self.ai_mentor_state.result_text = response.clone();
@@ -1115,7 +1105,11 @@ impl App {
                             // Store in history
                             let query = self.ai_mentor_state.input.clone();
                             self.ai_mentor_state.add_history(
-                                if query.is_empty() { "Question".to_string() } else { query },
+                                if query.is_empty() {
+                                    "Question".to_string()
+                                } else {
+                                    query
+                                },
                                 response,
                             );
                         }
@@ -1135,10 +1129,8 @@ impl App {
                             self.ai_mentor_state.mode = ai_mentor::AiMode::Result;
                             self.set_status("✓ AI response ready");
                             // Store in history
-                            self.ai_mentor_state.add_history(
-                                label.to_string(),
-                                response,
-                            );
+                            self.ai_mentor_state
+                                .add_history(label.to_string(), response);
                         }
                         Some(AiAction::MergeResolve(file_path)) => {
                             // Parse AI response and populate merge resolve state
@@ -1147,23 +1139,16 @@ impl App {
                                 parse_ai_resolved_content(&response);
                             self.merge_resolve_state.ai_recommendation =
                                 parse_ai_recommendation(&response);
-                            self.set_status(format!(
-                                "✓ AI resolution ready for {}",
-                                file_path
-                            ));
+                            self.set_status(format!("✓ AI resolution ready for {}", file_path));
                             // Generate follow-up suggestions
-                            let follow_ups = generate_merge_follow_ups(
-                                &file_path,
-                                &self.merge_resolve_state,
-                            );
+                            let follow_ups =
+                                generate_merge_follow_ups(&file_path, &self.merge_resolve_state);
                             if !follow_ups.is_empty() {
                                 self.merge_resolve_state.follow_ups = follow_ups;
                             }
                             // Store in history
-                            self.ai_mentor_state.add_history(
-                                format!("Merge Resolve: {}", file_path),
-                                response,
-                            );
+                            self.ai_mentor_state
+                                .add_history(format!("Merge Resolve: {}", file_path), response);
                         }
                         Some(AiAction::MergeStrategy) => {
                             // Show strategy recommendation as popup with follow-ups
@@ -1183,10 +1168,8 @@ impl App {
                             }
                             self.set_status("✓ AI strategy recommendation ready");
                             // Store in history
-                            self.ai_mentor_state.add_history(
-                                "Merge Strategy".to_string(),
-                                response,
-                            );
+                            self.ai_mentor_state
+                                .add_history("Merge Strategy".to_string(), response);
                         }
                         None => {
                             self.set_status(format!("AI: {}", response));
@@ -1225,75 +1208,79 @@ impl App {
     /// Handle mouse events (scroll wheel for list navigation).
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {
         match mouse.kind {
-            MouseEventKind::ScrollDown => {
-                match self.view {
-                    View::Staging => {
-                        let len = self.staging_state.files.len();
-                        if len > 0 && self.staging_state.selected < len - 1 {
-                            self.staging_state.selected += 1;
-                            self.staging_state.list_state.select(Some(self.staging_state.selected));
-                        }
+            MouseEventKind::ScrollDown => match self.view {
+                View::Staging => {
+                    let len = self.staging_state.files.len();
+                    if len > 0 && self.staging_state.selected < len - 1 {
+                        self.staging_state.selected += 1;
+                        self.staging_state
+                            .list_state
+                            .select(Some(self.staging_state.selected));
                     }
-                    View::Timeline => {
-                        let len = self.timeline_state.commits.len();
-                        if len > 0 && self.timeline_state.selected < len - 1 {
-                            self.timeline_state.selected += 1;
-                        }
-                    }
-                    View::Branches => {
-                        let len = self.branches_state.branches.len();
-                        if len > 0 && self.branches_state.selected < len - 1 {
-                            self.branches_state.selected += 1;
-                        }
-                    }
-                    View::Reflog => {
-                        let len = self.reflog_state.entries.len();
-                        if len > 0 && self.reflog_state.selected < len - 1 {
-                            self.reflog_state.selected += 1;
-                        }
-                    }
-                    View::Stash => {
-                        let len = self.stash_state.entries.len();
-                        if len > 0 && self.stash_state.selected < len - 1 {
-                            self.stash_state.selected += 1;
-                            self.stash_state.list_state.select(Some(self.stash_state.selected));
-                        }
-                    }
-                    _ => {}
                 }
-            }
-            MouseEventKind::ScrollUp => {
-                match self.view {
-                    View::Staging => {
-                        if self.staging_state.selected > 0 {
-                            self.staging_state.selected -= 1;
-                            self.staging_state.list_state.select(Some(self.staging_state.selected));
-                        }
+                View::Timeline => {
+                    let len = self.timeline_state.commits.len();
+                    if len > 0 && self.timeline_state.selected < len - 1 {
+                        self.timeline_state.selected += 1;
                     }
-                    View::Timeline => {
-                        if self.timeline_state.selected > 0 {
-                            self.timeline_state.selected -= 1;
-                        }
-                    }
-                    View::Branches => {
-                        if self.branches_state.selected > 0 {
-                            self.branches_state.selected -= 1;
-                        }
-                    }
-                    View::Reflog => {
-                        if self.reflog_state.selected > 0 {
-                            self.reflog_state.selected -= 1;
-                        }
-                    }
-                    View::Stash => {
-                        if self.stash_state.selected > 0 {
-                            self.stash_state.selected -= 1;
-                            self.stash_state.list_state.select(Some(self.stash_state.selected));
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                View::Branches => {
+                    let len = self.branches_state.branches.len();
+                    if len > 0 && self.branches_state.selected < len - 1 {
+                        self.branches_state.selected += 1;
+                    }
+                }
+                View::Reflog => {
+                    let len = self.reflog_state.entries.len();
+                    if len > 0 && self.reflog_state.selected < len - 1 {
+                        self.reflog_state.selected += 1;
+                    }
+                }
+                View::Stash => {
+                    let len = self.stash_state.entries.len();
+                    if len > 0 && self.stash_state.selected < len - 1 {
+                        self.stash_state.selected += 1;
+                        self.stash_state
+                            .list_state
+                            .select(Some(self.stash_state.selected));
+                    }
+                }
+                _ => {}
+            },
+            MouseEventKind::ScrollUp => match self.view {
+                View::Staging => {
+                    if self.staging_state.selected > 0 {
+                        self.staging_state.selected -= 1;
+                        self.staging_state
+                            .list_state
+                            .select(Some(self.staging_state.selected));
+                    }
+                }
+                View::Timeline => {
+                    if self.timeline_state.selected > 0 {
+                        self.timeline_state.selected -= 1;
+                    }
+                }
+                View::Branches => {
+                    if self.branches_state.selected > 0 {
+                        self.branches_state.selected -= 1;
+                    }
+                }
+                View::Reflog => {
+                    if self.reflog_state.selected > 0 {
+                        self.reflog_state.selected -= 1;
+                    }
+                }
+                View::Stash => {
+                    if self.stash_state.selected > 0 {
+                        self.stash_state.selected -= 1;
+                        self.stash_state
+                            .list_state
+                            .select(Some(self.stash_state.selected));
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
     }

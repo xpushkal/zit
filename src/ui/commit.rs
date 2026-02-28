@@ -82,7 +82,13 @@ impl CommitState {
     }
 }
 
-pub fn render(f: &mut Frame, area: Rect, state: &CommitState, ai_loading: bool, ai_available: bool) {
+pub fn render(
+    f: &mut Frame,
+    area: Rect,
+    state: &CommitState,
+    ai_loading: bool,
+    ai_available: bool,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -358,8 +364,10 @@ mod tests {
     use super::*;
 
     fn validate_msg(msg: &str) -> Vec<String> {
-        let mut state = CommitState::default();
-        state.message = msg.to_string();
+        let mut state = CommitState {
+            message: msg.to_string(),
+            ..CommitState::default()
+        };
         state.validate();
         state.validation_warnings
     }

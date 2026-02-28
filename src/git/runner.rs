@@ -26,7 +26,8 @@ pub fn run_git_with_timeout(args: &[&str], timeout: Duration) -> Result<String> 
         match child.try_wait() {
             Ok(Some(status)) => {
                 // Process finished
-                let output = child.wait_with_output()
+                let output = child
+                    .wait_with_output()
                     .context("Failed to read git output")?;
                 if !status.success() {
                     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -71,7 +72,9 @@ fn parse_git_version(version_str: &str) -> Option<(u32, u32, u32)> {
         .strip_prefix("git version ")
         .unwrap_or(version_str)
         .trim();
-    let mut parts = version_part.split(|c: char| !c.is_ascii_digit()).filter(|s| !s.is_empty());
+    let mut parts = version_part
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty());
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -88,8 +91,12 @@ pub fn check_git_version() -> Result<()> {
     if version < (min_major, min_minor, min_patch) {
         bail!(
             "Git version {}.{}.{} is too old (minimum: {}.{}.{})",
-            version.0, version.1, version.2,
-            min_major, min_minor, min_patch
+            version.0,
+            version.1,
+            version.2,
+            min_major,
+            min_minor,
+            min_patch
         );
     }
     log::debug!("Git version {}.{}.{} OK", version.0, version.1, version.2);

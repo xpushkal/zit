@@ -20,6 +20,11 @@ fn set_secret(key: &str, value: &str) -> Result<()> {
 
 /// Retrieve a secret from the OS keychain. Returns None if not found.
 fn get_secret(key: &str) -> Option<String> {
+    #[cfg(test)]
+    {
+        return None;
+    }
+
     let entry = keyring::Entry::new(SERVICE_NAME, key).ok()?;
     match entry.get_password() {
         Ok(pw) => Some(pw),

@@ -228,11 +228,7 @@ pub fn resolve_file(file_path: &str, resolved_content: &str) -> Result<()> {
 
 /// Resolve a specific conflict region by choosing a side.
 /// `choice` is "current", "incoming", or the full resolved text for "merge_both".
-pub fn resolve_region(
-    file_path: &str,
-    region: &ConflictRegion,
-    choice: &str,
-) -> Result<String> {
+pub fn resolve_region(file_path: &str, region: &ConflictRegion, choice: &str) -> Result<String> {
     let content = fs::read_to_string(file_path)
         .map_err(|e| anyhow::anyhow!("Cannot read file '{}': {}", file_path, e))?;
 
@@ -240,7 +236,7 @@ pub fn resolve_region(
     let mut result = Vec::new();
 
     let start = region.start_line - 1; // Convert to 0-based (this is the <<<<<<< line)
-    let end = region.end_line - 1;     // The >>>>>>> line (0-based)
+    let end = region.end_line - 1; // The >>>>>>> line (0-based)
 
     // Copy lines before the conflict
     for line in &lines[..start] {
@@ -364,7 +360,8 @@ pub fn check_merge_conflicts(other_ref: &str) -> Result<Vec<String>> {
             if err_str.contains("CONFLICT") || err_str.contains("Automatic merge failed") {
                 // Get list of conflicted files
                 let status = super::status::get_status().unwrap_or_default();
-                let conflicts: Vec<String> = status.conflicts.iter().map(|f| f.path.clone()).collect();
+                let conflicts: Vec<String> =
+                    status.conflicts.iter().map(|f| f.path.clone()).collect();
                 // Abort the test merge
                 let _ = run_git(&["merge", "--abort"]);
                 Ok(conflicts)

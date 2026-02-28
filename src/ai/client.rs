@@ -852,10 +852,7 @@ mod tests {
         let json = r#"{"success": true, "response": {"type": "commit_suggestion", "content": "fix: typo"}}"#;
         let resp: MentorApiResponse = serde_json::from_str(json).unwrap();
         assert!(resp.success);
-        assert_eq!(
-            resp.response.unwrap().content.unwrap(),
-            "fix: typo"
-        );
+        assert_eq!(resp.response.unwrap().content.unwrap(), "fix: typo");
     }
 
     #[test]
