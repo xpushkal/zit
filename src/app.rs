@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::git;
 use crate::ui::{
     ai_mentor, branches, commit, dashboard, github, merge_resolve, reflog, staging, stash,
-    time_travel, timeline,
+    time_travel, timeline, workflow_builder,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,6 +23,7 @@ pub enum View {
     AiMentor,
     Stash,
     MergeResolve,
+    WorkflowBuilder,
 }
 
 /// Popup dialog state.
@@ -77,6 +78,7 @@ pub enum FollowUpAction {
     RunGitCommand(Vec<String>), // args for git
     EditCommitMessage,
     RegenerateAiSuggestion,
+    WriteGitignore(String), // generated .gitignore content
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +125,7 @@ pub enum AiAction {
     MergeResolve(String), // file path being resolved
     MergeStrategy,
     ResetSuggest,
+    GenerateGitignore,
 }
 
 pub struct App {
@@ -151,6 +154,7 @@ pub struct App {
     pub ai_mentor_state: ai_mentor::AiMentorState,
     pub stash_state: stash::StashState,
     pub merge_resolve_state: merge_resolve::MergeResolveState,
+    pub workflow_builder_state: workflow_builder::WorkflowBuilderState,
 }
 
 impl App {
@@ -188,6 +192,7 @@ impl App {
             ai_mentor_state: ai_mentor::AiMentorState::default(),
             stash_state: stash::StashState::default(),
             merge_resolve_state: merge_resolve::MergeResolveState::default(),
+            workflow_builder_state: workflow_builder::WorkflowBuilderState::new(),
         }
     }
 
@@ -205,6 +210,7 @@ impl App {
             View::AiMentor => {} // no auto-refresh
             View::Stash => self.stash_state.refresh(),
             View::MergeResolve => self.merge_resolve_state.refresh(),
+            View::WorkflowBuilder => {} // no auto-refresh
         }
     }
 
@@ -404,6 +410,10 @@ impl App {
                     self.merge_resolve_state.refresh();
                     return Ok(());
                 }
+                KeyCode::Char('w') => {
+                    self.view = View::WorkflowBuilder;
+                    return Ok(());
+                }
                 _ => {}
             }
         }
@@ -421,6 +431,7 @@ impl App {
             View::AiMentor => ai_mentor::handle_key(self, key)?,
             View::Stash => stash::handle_key(self, key)?,
             View::MergeResolve => merge_resolve::handle_key(self, key)?,
+            View::WorkflowBuilder => workflow_builder::handle_key(self, key)?,
         }
 
         Ok(())
@@ -1118,6 +1129,34 @@ impl App {
         });
     }
 
+    /// Start an async AI .gitignore generation — non-blocking.
+    pub fn start_ai_gitignore(&mut self) {
+        if self.ai_loading {
+            self.set_status("⏳ AI is already generating...");
+            return;
+        }
+        let client = match self.ai_client {
+            Some(ref c) => Arc::clone(c),
+            None => {
+                self.set_status("AI not configured. Set [ai] in ~/.config/zit/config.toml or export ZIT_AI_API_KEY + ZIT_AI_ENDPOINT");
+                return;
+            }
+        };
+
+        self.ai_loading = true;
+        self.ai_action = Some(AiAction::GenerateGitignore);
+        self.ai_mentor_state.last_action = Some("Generate .gitignore".to_string());
+        self.set_status("⏳ AI is analyzing project structure...");
+
+        let (tx, rx) = mpsc::channel();
+        self.ai_receiver = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = client.generate_gitignore().map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
     /// Execute a follow-up action from the suggestion list.
     pub fn execute_follow_up(&mut self, action: FollowUpAction) {
         match action {
@@ -1199,6 +1238,18 @@ impl App {
                             .map(|f| f.path.clone())
                             .unwrap_or_default();
                         self.start_ai_merge_resolve(path, content);
+                    }
+                }
+            }
+            FollowUpAction::WriteGitignore(content) => {
+                match std::fs::write(".gitignore", &content) {
+                    Ok(()) => {
+                        self.set_status("✓ .gitignore written successfully");
+                        // Stage the new .gitignore
+                        let _ = git::run_git(&["add", ".gitignore"]);
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Error writing .gitignore: {}", e));
                     }
                 }
             }
@@ -1340,6 +1391,48 @@ impl App {
                             // Store in history
                             self.ai_mentor_state
                                 .add_history("Reset Insight".to_string(), response);
+                        }
+                        Some(AiAction::GenerateGitignore) => {
+                            // Strip markdown code fences if the AI wrapped them
+                            let clean = response
+                                .trim()
+                                .strip_prefix("```gitignore")
+                                .or_else(|| response.trim().strip_prefix("```"))
+                                .unwrap_or(response.trim());
+                            let clean = clean
+                                .strip_suffix("```")
+                                .unwrap_or(clean)
+                                .trim()
+                                .to_string();
+
+                            self.ai_mentor_state.result_text = clean.clone();
+                            self.ai_mentor_state.result_scroll = 0;
+                            self.ai_mentor_state.mode = ai_mentor::AiMode::Result;
+                            self.set_status("✓ .gitignore generated — press 'w' to write to disk");
+
+                            // Show follow-up to write to disk
+                            self.popup = Popup::FollowUp {
+                                title: "📄 Generated .gitignore".to_string(),
+                                context: clean.clone(),
+                                suggestions: vec![
+                                    FollowUpItem {
+                                        label: "Write .gitignore".to_string(),
+                                        description: "Save to .gitignore in the project root"
+                                            .to_string(),
+                                        action: FollowUpAction::WriteGitignore(clean.clone()),
+                                    },
+                                    FollowUpItem {
+                                        label: "Regenerate".to_string(),
+                                        description: "Ask AI to generate again".to_string(),
+                                        action: FollowUpAction::RegenerateAiSuggestion,
+                                    },
+                                ],
+                                selected: 0,
+                            };
+
+                            // Store in history
+                            self.ai_mentor_state
+                                .add_history("Generate .gitignore".to_string(), clean);
                         }
                         None => {
                             self.set_status(format!("AI: {}", response));

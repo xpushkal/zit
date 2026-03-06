@@ -564,6 +564,39 @@ impl AiClient {
         self.call(&request)
     }
 
+    /// Generate a .gitignore file based on the project structure using AI.
+    pub fn generate_gitignore(&self) -> Result<String> {
+        // Collect file listing: tracked + untracked (excluding ignored)
+        let tracked = git::run_git(&["ls-files"]).unwrap_or_default();
+        let untracked = git::run_git(&["ls-files", "--others", "--exclude-standard"])
+            .unwrap_or_default();
+
+        let mut file_listing = String::new();
+        for line in tracked.lines().chain(untracked.lines()) {
+            if !line.is_empty() {
+                file_listing.push_str(line);
+                file_listing.push('\n');
+            }
+        }
+
+        // Truncate if the listing is very large
+        if file_listing.len() > 8000 {
+            file_listing.truncate(8000);
+            file_listing.push_str("\n...(truncated)");
+        }
+
+        // Read existing .gitignore if present
+        let existing_gitignore = std::fs::read_to_string(".gitignore").ok();
+
+        let request = MentorRequest {
+            request_type: "generate_gitignore".to_string(),
+            context: None,
+            query: Some(file_listing),
+            error: existing_gitignore, // reuse error field for existing .gitignore context
+        };
+        self.call(&request)
+    }
+
     /// Get AI recommendation for resetting to a specific commit.
     pub fn suggest_reset(
         &self,

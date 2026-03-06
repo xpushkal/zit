@@ -276,6 +276,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &DashboardState, status_msg: &Op
         Span::raw(" AI Mentor "),
         Span::styled("[m]", Style::default().fg(Color::Red)),
         Span::raw(" Merge "),
+        Span::styled("[w]", Style::default().fg(Color::Cyan)),
+        Span::raw(" Workflow "),
         Span::styled("[?]", Style::default().fg(Color::Cyan)),
         Span::raw(" Help "),
         Span::styled("[q]", Style::default().fg(Color::Red)),

@@ -126,6 +126,7 @@ const MENU_ITEMS: &[(&str, &str)] = &[
         "Get a safe recommendation for a git operation",
     ),
     ("📚 Learn", "Learn a git concept with examples"),
+    ("📄 Generate .gitignore", "AI-powered .gitignore based on project structure"),
     ("🏥 Health Check", "Test connectivity to the AI service"),
     ("📜 History", "View past AI interactions"),
     ("⚙️  Switch Provider", "Change AI provider (OpenAI, Anthropic, Ollama...)"),
@@ -461,7 +462,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Enter => {
-            if app.ai_client.is_none() && app.ai_mentor_state.selected != 5 && app.ai_mentor_state.selected != 6 {
+            if app.ai_client.is_none() && app.ai_mentor_state.selected != 6 && app.ai_mentor_state.selected != 7 {
                 // Launch interactive AI setup wizard (except for history/switch which don't need AI)
                 app.start_ai_setup();
                 return Ok(());
@@ -491,17 +492,21 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.ai_mentor_state.input.clear();
                 }
                 4 => {
+                    // Generate .gitignore — no input needed, fire directly
+                    app.start_ai_gitignore();
+                }
+                5 => {
                     // Health check — fire directly
                     app.ai_mentor_state.last_action = Some("Health Check".to_string());
                     app.start_ai_query("health_check".to_string(), None);
                 }
-                5 => {
+                6 => {
                     // History — switch to history mode
                     app.ai_mentor_state.mode = AiMode::History;
                     app.ai_mentor_state.history_selected = 0;
                     app.ai_mentor_state.history_scroll = 0;
                 }
-                6 => {
+                7 => {
                     // Switch Provider — launch setup wizard
                     app.start_ai_setup();
                 }

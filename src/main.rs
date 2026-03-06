@@ -184,6 +184,7 @@ fn run_app(
                 if app.view == View::GitHub {
                     ui::github::tick_device_auth(app);
                     ui::github::tick_pr_state(app);
+                    ui::github::tick_actions_state(app);
                 }
             }
             AppEvent::Mouse(mouse) => {
@@ -250,6 +251,9 @@ fn draw(f: &mut Frame, app: &mut App) {
             let ai_loading = app.ai_loading;
             let ai_available = app.ai_client.is_some();
             ui::merge_resolve::render(f, area, &app.merge_resolve_state, ai_loading, ai_available);
+        }
+        View::WorkflowBuilder => {
+            ui::workflow_builder::render(f, area, &app.workflow_builder_state);
         }
     }
 

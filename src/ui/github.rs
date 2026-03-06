@@ -18,6 +18,8 @@ pub enum GitHubView {
     Collaborators,
     PullRequests,
     PullRequestDetail(u64),
+    Actions,
+    ActionDetail(u64),
 }
 
 // ─── Pull Request UI Types ────────────────────────────────
@@ -118,6 +120,54 @@ pub enum PrBgResult {
     CloseResult(Result<git::github_auth::PullRequest, String>),
 }
 
+#[derive(Debug, Clone)]
+pub enum ActionsBgResult {
+    RunsList(Result<Vec<git::github_auth::WorkflowRun>, String>),
+    RunDetail(Result<Vec<git::github_auth::WorkflowJob>, String>),
+    JobLogs(u64, Result<String, String>), // (job_id, logs)
+}
+
+pub struct ActionsState {
+    pub runs: Vec<git::github_auth::WorkflowRun>,
+    pub selected: usize,
+    pub list_state: ListState,
+    pub loading: bool,
+    pub error: Option<String>,
+    // Detail view
+    pub jobs: Vec<git::github_auth::WorkflowJob>,
+    pub selected_job: usize,
+    pub job_list_state: ListState,
+    pub job_logs: Option<String>,
+    pub log_scroll: u16,
+    pub detail_pane: ActionDetailPane,
+    pub bg_result: Arc<Mutex<Option<ActionsBgResult>>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ActionDetailPane {
+    Jobs,
+    Logs,
+}
+
+impl ActionsState {
+    pub fn new() -> Self {
+        Self {
+            runs: Vec::new(),
+            selected: 0,
+            list_state: ListState::default(),
+            loading: false,
+            error: None,
+            jobs: Vec::new(),
+            selected_job: 0,
+            job_list_state: ListState::default(),
+            job_logs: None,
+            log_scroll: 0,
+            detail_pane: ActionDetailPane::Jobs,
+            bg_result: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 pub struct PullRequestsState {
     pub prs: Vec<git::github_auth::PullRequest>,
     pub selected: usize,
@@ -190,6 +240,8 @@ pub struct GitHubState {
     pub bg_result: Arc<Mutex<Option<String>>>,
     // Pull-request state
     pub pr_state: PullRequestsState,
+    // Actions state
+    pub actions_state: ActionsState,
     // Status
     pub status: Option<String>,
 }
@@ -213,6 +265,7 @@ impl GitHubState {
             collab_error: None,
             bg_result: Arc::new(Mutex::new(None)),
             pr_state: PullRequestsState::new(),
+            actions_state: ActionsState::new(),
             status: None,
         }
     }
@@ -228,6 +281,8 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut GitHubState, config: &crate
         GitHubView::Collaborators => render_collaborators(f, area, state),
         GitHubView::PullRequests => render_pull_requests(f, area, state),
         GitHubView::PullRequestDetail(_) => render_pr_detail(f, area, state),
+        GitHubView::Actions => render_actions_list(f, area, state),
+        GitHubView::ActionDetail(_) => render_action_detail(f, area, state),
     }
 }
 
@@ -322,6 +377,10 @@ fn render_menu(
         ListItem::new(Line::from(vec![
             Span::styled("  🔀  ", Style::default()),
             Span::styled("Pull Requests", Style::default().fg(Color::White)),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled("  ⚡  ", Style::default()),
+            Span::styled("Actions", Style::default().fg(Color::White)),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled("  🚪  ", Style::default()),
@@ -697,6 +756,8 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
         GitHubView::Collaborators => handle_collaborators_key(app, key),
         GitHubView::PullRequests => handle_pull_requests_key(app, key),
         GitHubView::PullRequestDetail(_) => handle_pr_detail_key(app, key),
+        GitHubView::Actions => handle_actions_key(app, key),
+        GitHubView::ActionDetail(_) => handle_action_detail_key(app, key),
     }
 }
 
@@ -710,7 +771,7 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.github_state.menu_selected < 7 {
+            if app.github_state.menu_selected < 8 {
                 app.github_state.menu_selected += 1;
                 let sel = app.github_state.menu_selected;
                 app.github_state.menu_state.select(Some(sel));
@@ -812,6 +873,16 @@ fn handle_menu_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<(
                     app.github_state.view = GitHubView::PullRequests;
                 }
                 7 => {
+                    // Actions
+                    if app.config.github.get_token().is_none() {
+                        app.github_state.status =
+                            Some("Login first to view Actions".to_string());
+                        return Ok(());
+                    }
+                    start_load_actions(app);
+                    app.github_state.view = GitHubView::Actions;
+                }
+                8 => {
                     // Logout — clear keychain and config
                     if app.config.github.get_token().is_some() {
                         crate::keychain::clear_all();
@@ -1937,3 +2008,594 @@ fn handle_pr_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Res
     }
     Ok(())
 }
+
+// ─── GitHub Actions Rendering ────────────────────────────────
+
+fn status_color(status: Option<&str>, conclusion: Option<&str>) -> Color {
+    match conclusion.unwrap_or("") {
+        "success" => Color::Green,
+        "failure" | "timed_out" => Color::Red,
+        "cancelled" => Color::DarkGray,
+        "skipped" => Color::DarkGray,
+        _ => match status.unwrap_or("") {
+            "in_progress" => Color::Cyan,
+            "queued" | "waiting" | "pending" => Color::Yellow,
+            "completed" => Color::Green,
+            _ => Color::White,
+        },
+    }
+}
+
+fn status_icon(status: Option<&str>, conclusion: Option<&str>) -> &'static str {
+    match conclusion.unwrap_or("") {
+        "success" => "✅",
+        "failure" | "timed_out" => "❌",
+        "cancelled" => "⚪",
+        "skipped" => "⏭",
+        _ => match status.unwrap_or("") {
+            "in_progress" => "🔵",
+            "queued" | "waiting" | "pending" => "🟡",
+            _ => "⚪",
+        },
+    }
+}
+
+fn render_actions_list(f: &mut Frame, area: Rect, state: &mut GitHubState) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Min(6),   // Runs list
+            Constraint::Length(2), // Keys
+            Constraint::Length(2), // Status/Error
+        ])
+        .split(area);
+
+    let title = Paragraph::new(Line::from(vec![
+        Span::styled("  ⚡ ", Style::default()),
+        Span::styled(
+            "GitHub Actions",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  ({} runs)", state.actions_state.runs.len()),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(title, chunks[0]);
+
+    // Loading state
+    if state.actions_state.loading && state.actions_state.runs.is_empty() {
+        let loading = Paragraph::new(Line::from(vec![
+            Span::styled("  ⏳ ", Style::default().fg(Color::Cyan)),
+            Span::styled("Loading workflow runs...", Style::default().fg(Color::DarkGray)),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(loading, chunks[1]);
+    } else if state.actions_state.runs.is_empty() {
+        let empty = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  No workflow runs found.",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+        f.render_widget(empty, chunks[1]);
+    } else {
+        let items: Vec<ListItem> = state
+            .actions_state
+            .runs
+            .iter()
+            .map(|run| {
+                let status_str = run.status.as_deref().unwrap_or("unknown");
+                let conclusion_str = run.conclusion.as_deref();
+                let icon = status_icon(Some(status_str), conclusion_str);
+                let color = status_color(Some(status_str), conclusion_str);
+                let name = run.display_title.as_deref()
+                    .or(run.name.as_deref())
+                    .unwrap_or("Workflow");
+                let branch = run.head_branch.as_deref().unwrap_or("");
+                let status_label = conclusion_str.unwrap_or(status_str);
+
+                ListItem::new(Line::from(vec![
+                    Span::styled(format!("  {} ", icon), Style::default()),
+                    Span::styled(
+                        format!("#{} ", run.run_number),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        truncate_str(name, 35),
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        format!("  {} ", branch),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(
+                        status_label.to_string(),
+                        Style::default().fg(color).add_modifier(Modifier::BOLD),
+                    ),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .title(Span::styled(
+                        " Workflow Runs (newest first) ",
+                        Style::default().fg(Color::White),
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::DarkGray)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(list, chunks[1], &mut state.actions_state.list_state);
+    }
+
+    // Keys
+    let keys = Paragraph::new(Line::from(vec![
+        Span::styled(" [Enter]", Style::default().fg(Color::Cyan)),
+        Span::raw(" View "),
+        Span::styled("[r]", Style::default().fg(Color::Yellow)),
+        Span::raw(" Refresh "),
+        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+        Span::raw(" Back"),
+    ]));
+    f.render_widget(keys, chunks[2]);
+
+    // Error
+    if let Some(ref err) = state.actions_state.error {
+        let status = Paragraph::new(Span::styled(
+            format!(" ❌ {}", err),
+            Style::default().fg(Color::Red),
+        ));
+        f.render_widget(status, chunks[3]);
+    }
+}
+
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() > max_len {
+        format!("{}…", &s[..max_len - 1])
+    } else {
+        s.to_string()
+    }
+}
+
+fn render_action_detail(f: &mut Frame, area: Rect, state: &mut GitHubState) {
+    let outer_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Title
+            Constraint::Min(8),   // Content (split: jobs | logs)
+            Constraint::Length(2), // Keys
+        ])
+        .split(area);
+
+    // Title — show run info
+    let run_title = if let GitHubView::ActionDetail(run_id) = state.view {
+        let run = state.actions_state.runs.iter().find(|r| r.id == run_id);
+        if let Some(run) = run {
+            let name = run.display_title.as_deref()
+                .or(run.name.as_deref())
+                .unwrap_or("Workflow");
+            let icon = status_icon(
+                run.status.as_deref(),
+                run.conclusion.as_deref(),
+            );
+            format!("  {} #{} — {}", icon, run.run_number, name)
+        } else {
+            "  Workflow Run".to_string()
+        }
+    } else {
+        "  Workflow Run".to_string()
+    };
+
+    let title = Paragraph::new(Span::styled(
+        run_title,
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    ))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
+    f.render_widget(title, outer_chunks[0]);
+
+    // Split content area: jobs (left) | logs (right)
+    let content_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(35), // Jobs list
+            Constraint::Percentage(65), // Logs
+        ])
+        .split(outer_chunks[1]);
+
+    // Jobs list
+    if state.actions_state.loading && state.actions_state.jobs.is_empty() {
+        let loading = Paragraph::new(Span::styled(
+            "  ⏳ Loading jobs...",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .block(
+            Block::default()
+                .title(Span::styled(" Jobs ", Style::default().fg(Color::White)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(
+                    if state.actions_state.detail_pane == ActionDetailPane::Jobs {
+                        Color::Cyan
+                    } else {
+                        Color::DarkGray
+                    },
+                )),
+        );
+        f.render_widget(loading, content_chunks[0]);
+    } else {
+        let job_items: Vec<ListItem> = state
+            .actions_state
+            .jobs
+            .iter()
+            .map(|job| {
+                let icon = status_icon(Some(job.status.as_str()), job.conclusion.as_deref());
+                let color = status_color(Some(job.status.as_str()), job.conclusion.as_deref());
+
+                let mut spans = vec![
+                    Span::styled(format!("  {} ", icon), Style::default()),
+                    Span::styled(&job.name, Style::default().fg(color)),
+                ];
+
+                // Show step count
+                if !job.steps.is_empty() {
+                    let completed = job.steps.iter().filter(|s| s.status == "completed").count();
+                    spans.push(Span::styled(
+                        format!("  ({}/{})", completed, job.steps.len()),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
+
+                ListItem::new(Line::from(spans))
+            })
+            .collect();
+
+        let job_list = List::new(job_items)
+            .block(
+                Block::default()
+                    .title(Span::styled(" Jobs ", Style::default().fg(Color::White)))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(
+                        if state.actions_state.detail_pane == ActionDetailPane::Jobs {
+                            Color::Cyan
+                        } else {
+                            Color::DarkGray
+                        },
+                    )),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("▶ ");
+
+        f.render_stateful_widget(job_list, content_chunks[0], &mut state.actions_state.job_list_state);
+    }
+
+    // Logs pane
+    let logs_border_color = if state.actions_state.detail_pane == ActionDetailPane::Logs {
+        Color::Cyan
+    } else {
+        Color::DarkGray
+    };
+
+    if let Some(ref logs) = state.actions_state.job_logs {
+        let log_lines: Vec<Line> = logs
+            .lines()
+            .skip(state.actions_state.log_scroll as usize)
+            .map(|line| {
+                let color = if line.contains("error") || line.contains("Error") || line.contains("FAIL") {
+                    Color::Red
+                } else if line.contains("warning") || line.contains("Warning") {
+                    Color::Yellow
+                } else if line.contains("##[group]") || line.starts_with("Run ") {
+                    Color::Cyan
+                } else {
+                    Color::White
+                };
+                Line::from(Span::styled(format!("  {}", line), Style::default().fg(color)))
+            })
+            .collect();
+
+        let job_name = state.actions_state.jobs
+            .get(state.actions_state.selected_job)
+            .map(|j| j.name.as_str())
+            .unwrap_or("Logs");
+
+        let logs_widget = Paragraph::new(log_lines)
+            .block(
+                Block::default()
+                    .title(Span::styled(
+                        format!(" {} — Logs ", job_name),
+                        Style::default().fg(Color::White),
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(logs_border_color)),
+            );
+        f.render_widget(logs_widget, content_chunks[1]);
+    } else {
+        let placeholder = Paragraph::new(Line::from(vec![
+            Span::styled(
+                "  Select a job and press ",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
+            Span::styled(" to load logs", Style::default().fg(Color::DarkGray)),
+        ]))
+        .block(
+            Block::default()
+                .title(Span::styled(" Logs ", Style::default().fg(Color::White)))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(logs_border_color)),
+        );
+        f.render_widget(placeholder, content_chunks[1]);
+    }
+
+    // Keys
+    let keys = Paragraph::new(Line::from(vec![
+        Span::styled(" [Tab]", Style::default().fg(Color::Cyan)),
+        Span::raw(" Switch pane "),
+        Span::styled("[Enter]", Style::default().fg(Color::Cyan)),
+        Span::raw(" Load logs "),
+        Span::styled("[r]", Style::default().fg(Color::Yellow)),
+        Span::raw(" Refresh "),
+        Span::styled("[Esc]", Style::default().fg(Color::DarkGray)),
+        Span::raw(" Back"),
+    ]));
+    f.render_widget(keys, outer_chunks[2]);
+}
+
+// ─── Actions Key Handlers ────────────────────────────────
+
+fn handle_actions_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    match key.code {
+        KeyCode::Esc => {
+            app.github_state.view = GitHubView::Menu;
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.github_state.actions_state.selected > 0 {
+                app.github_state.actions_state.selected -= 1;
+                let sel = app.github_state.actions_state.selected;
+                app.github_state.actions_state.list_state.select(Some(sel));
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if !app.github_state.actions_state.runs.is_empty()
+                && app.github_state.actions_state.selected + 1
+                    < app.github_state.actions_state.runs.len()
+            {
+                app.github_state.actions_state.selected += 1;
+                let sel = app.github_state.actions_state.selected;
+                app.github_state.actions_state.list_state.select(Some(sel));
+            }
+        }
+        KeyCode::Enter => {
+            if let Some(run) = app
+                .github_state
+                .actions_state
+                .runs
+                .get(app.github_state.actions_state.selected)
+            {
+                let run_id = run.id;
+                app.github_state.view = GitHubView::ActionDetail(run_id);
+                app.github_state.actions_state.jobs.clear();
+                app.github_state.actions_state.job_logs = None;
+                app.github_state.actions_state.selected_job = 0;
+                app.github_state.actions_state.log_scroll = 0;
+                app.github_state.actions_state.detail_pane = ActionDetailPane::Jobs;
+                start_load_action_detail(app, run_id);
+            }
+        }
+        KeyCode::Char('r') => {
+            start_load_actions(app);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_action_detail_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    match key.code {
+        KeyCode::Esc => {
+            app.github_state.view = GitHubView::Actions;
+            app.github_state.actions_state.job_logs = None;
+        }
+        KeyCode::Tab => {
+            app.github_state.actions_state.detail_pane =
+                match app.github_state.actions_state.detail_pane {
+                    ActionDetailPane::Jobs => ActionDetailPane::Logs,
+                    ActionDetailPane::Logs => ActionDetailPane::Jobs,
+                };
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            match app.github_state.actions_state.detail_pane {
+                ActionDetailPane::Jobs => {
+                    if app.github_state.actions_state.selected_job > 0 {
+                        app.github_state.actions_state.selected_job -= 1;
+                        let sel = app.github_state.actions_state.selected_job;
+                        app.github_state.actions_state.job_list_state.select(Some(sel));
+                    }
+                }
+                ActionDetailPane::Logs => {
+                    if app.github_state.actions_state.log_scroll > 0 {
+                        app.github_state.actions_state.log_scroll =
+                            app.github_state.actions_state.log_scroll.saturating_sub(3);
+                    }
+                }
+            }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            match app.github_state.actions_state.detail_pane {
+                ActionDetailPane::Jobs => {
+                    if !app.github_state.actions_state.jobs.is_empty()
+                        && app.github_state.actions_state.selected_job + 1
+                            < app.github_state.actions_state.jobs.len()
+                    {
+                        app.github_state.actions_state.selected_job += 1;
+                        let sel = app.github_state.actions_state.selected_job;
+                        app.github_state.actions_state.job_list_state.select(Some(sel));
+                    }
+                }
+                ActionDetailPane::Logs => {
+                    app.github_state.actions_state.log_scroll += 3;
+                }
+            }
+        }
+        KeyCode::Enter => {
+            // Load logs for the selected job
+            if let Some(job) = app
+                .github_state
+                .actions_state
+                .jobs
+                .get(app.github_state.actions_state.selected_job)
+            {
+                let job_id = job.id;
+                app.github_state.actions_state.log_scroll = 0;
+                start_load_job_logs(app, job_id);
+            }
+        }
+        KeyCode::Char('r') => {
+            // Refresh detail
+            if let GitHubView::ActionDetail(run_id) = app.github_state.view {
+                start_load_action_detail(app, run_id);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+// ─── Actions Background Loading ────────────────────────────────
+
+fn start_load_actions(app: &mut crate::app::App) {
+    app.github_state.actions_state.loading = true;
+    app.github_state.actions_state.error = None;
+    let token = app.config.github.get_token().unwrap_or_default();
+    let bg = app.github_state.actions_state.bg_result.clone();
+    std::thread::spawn(move || {
+        let result = git::github_auth::list_workflow_runs(&token)
+            .map(|r| r.workflow_runs)
+            .map_err(|e| e.to_string());
+        if let Ok(mut r) = bg.lock() {
+            *r = Some(ActionsBgResult::RunsList(result));
+        }
+    });
+}
+
+fn start_load_action_detail(app: &mut crate::app::App, run_id: u64) {
+    app.github_state.actions_state.loading = true;
+    app.github_state.actions_state.error = None;
+    let token = app.config.github.get_token().unwrap_or_default();
+    let bg = app.github_state.actions_state.bg_result.clone();
+    std::thread::spawn(move || {
+        let result = git::github_auth::list_run_jobs(&token, run_id)
+            .map(|r| r.jobs)
+            .map_err(|e| e.to_string());
+        if let Ok(mut r) = bg.lock() {
+            *r = Some(ActionsBgResult::RunDetail(result));
+        }
+    });
+}
+
+fn start_load_job_logs(app: &mut crate::app::App, job_id: u64) {
+    app.github_state.actions_state.loading = true;
+    let token = app.config.github.get_token().unwrap_or_default();
+    let bg = app.github_state.actions_state.bg_result.clone();
+    std::thread::spawn(move || {
+        let result = git::github_auth::get_job_logs(&token, job_id)
+            .map_err(|e| e.to_string());
+        if let Ok(mut r) = bg.lock() {
+            *r = Some(ActionsBgResult::JobLogs(job_id, result));
+        }
+    });
+}
+
+/// Called on each tick to poll for Actions background results.
+pub fn tick_actions_state(app: &mut crate::app::App) {
+    let bg_taken = {
+        if let Ok(mut result) = app.github_state.actions_state.bg_result.try_lock() {
+            result.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some(bg) = bg_taken {
+        app.github_state.actions_state.loading = false;
+        match bg {
+            ActionsBgResult::RunsList(Ok(runs)) => {
+                app.github_state.actions_state.runs = runs;
+                app.github_state.actions_state.selected = 0;
+                app.github_state.actions_state.list_state.select(
+                    if app.github_state.actions_state.runs.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    },
+                );
+                app.github_state.actions_state.error = None;
+            }
+            ActionsBgResult::RunsList(Err(e)) => {
+                app.github_state.actions_state.error = Some(e);
+            }
+            ActionsBgResult::RunDetail(Ok(jobs)) => {
+                app.github_state.actions_state.jobs = jobs;
+                app.github_state.actions_state.selected_job = 0;
+                app.github_state.actions_state.job_list_state.select(
+                    if app.github_state.actions_state.jobs.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    },
+                );
+            }
+            ActionsBgResult::RunDetail(Err(e)) => {
+                app.github_state.actions_state.error = Some(format!("Jobs: {}", e));
+            }
+            ActionsBgResult::JobLogs(_job_id, Ok(logs)) => {
+                app.github_state.actions_state.job_logs = Some(logs);
+                app.github_state.actions_state.log_scroll = 0;
+                // Switch focus to logs pane
+                app.github_state.actions_state.detail_pane = ActionDetailPane::Logs;
+            }
+            ActionsBgResult::JobLogs(_job_id, Err(e)) => {
+                app.github_state.actions_state.job_logs =
+                    Some(format!("Failed to load logs: {}", e));
+            }
+        }
+    }
+}
+

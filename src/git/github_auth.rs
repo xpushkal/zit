@@ -584,3 +584,130 @@ pub fn close_pull_request(token: &str, number: u64) -> Result<PullRequest> {
     let pr: PullRequest = serde_json::from_value(resp_body).context("Failed to deserialize PR")?;
     Ok(pr)
 }
+
+// ─── GitHub Actions Types ────────────────────────────────────────
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct WorkflowRun {
+    pub id: u64,
+    pub name: Option<String>,
+    pub status: Option<String>,
+    pub conclusion: Option<String>,
+    pub head_branch: Option<String>,
+    pub event: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub html_url: String,
+    pub run_number: u64,
+    pub display_title: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkflowRunsResponse {
+    pub total_count: u64,
+    pub workflow_runs: Vec<WorkflowRun>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct WorkflowJob {
+    pub id: u64,
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<JobStep>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
+pub struct JobStep {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub number: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkflowJobsResponse {
+    pub total_count: u64,
+    pub jobs: Vec<WorkflowJob>,
+}
+
+// ─── GitHub Actions API Functions ────────────────────────────────
+
+/// List workflow runs for the repository, sorted newest first.
+pub fn list_workflow_runs(token: &str) -> Result<WorkflowRunsResponse> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/runs?per_page=30&sort=created&direction=desc",
+        owner, repo
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse workflow runs")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let runs: WorkflowRunsResponse =
+        serde_json::from_value(body).context("Failed to deserialize workflow runs")?;
+    Ok(runs)
+}
+
+/// List jobs for a specific workflow run.
+pub fn list_run_jobs(token: &str, run_id: u64) -> Result<WorkflowJobsResponse> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/runs/{}/jobs",
+        owner, repo, run_id
+    );
+    let resp = gh_get(token, &url)?;
+    let status = resp.status();
+    let body: serde_json::Value = resp.json().context("Failed to parse workflow jobs")?;
+    if !status.is_success() {
+        let msg = body["message"].as_str().unwrap_or("Unknown error");
+        anyhow::bail!("{}", msg);
+    }
+    let jobs: WorkflowJobsResponse =
+        serde_json::from_value(body).context("Failed to deserialize workflow jobs")?;
+    Ok(jobs)
+}
+
+/// Download logs for a specific job. Returns the log text.
+pub fn get_job_logs(token: &str, job_id: u64) -> Result<String> {
+    let (owner, repo) = parse_repo_from_remote()?;
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/actions/jobs/{}/logs",
+        owner, repo, job_id
+    );
+    let client = reqwest::blocking::Client::new();
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", token))
+        .header("User-Agent", "zit-cli")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .context("Failed to fetch job logs")?;
+
+    let status = resp.status();
+    if status.is_redirection() {
+        // GitHub redirects to a temporary URL for log downloads
+        if let Some(location) = resp.headers().get("location") {
+            let redirect_url = location.to_str().unwrap_or("");
+            let log_resp = reqwest::blocking::get(redirect_url)
+                .context("Failed to follow log redirect")?;
+            return Ok(log_resp.text().context("Failed to read log text")?);
+        }
+    }
+
+    if !status.is_success() {
+        let body = resp.text().unwrap_or_default();
+        anyhow::bail!("Failed to fetch logs ({}): {}", status, body);
+    }
+
+    Ok(resp.text().context("Failed to read log text")?)
+}

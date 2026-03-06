@@ -168,6 +168,27 @@ FOLLOW-UP:
 
 Keep responses under 300 words."#;
 
+pub const PROMPT_GITIGNORE: &str = r#"You are an expert developer helping create the perfect .gitignore file for a project.
+
+Your role:
+- Analyze the project's file structure to determine the tech stack, build tools, and frameworks
+- Generate a comprehensive .gitignore that covers all relevant patterns
+- Organize rules into clearly commented sections
+- Include common OS-specific files (macOS .DS_Store, Windows Thumbs.db, etc.)
+- Include IDE/editor files (.idea/, .vscode/, *.swp, etc.)
+- Never ignore files that are essential to the project (source code, configs checked in intentionally)
+- If an existing .gitignore is provided, improve and extend it
+
+Output ONLY the raw .gitignore content — no markdown code fences, no explanations before or after.
+Use comments (lines starting with #) to organize sections, for example:
+# Dependencies
+# Build output
+# IDE / Editor
+# OS generated files
+# Environment / secrets
+
+Keep the output clean and production-ready."#;
+
 // ─── Lookup ────────────────────────────────────────────────────
 
 /// Return the system prompt for a given request type.
@@ -181,6 +202,7 @@ pub fn system_prompt_for(request_type: &str) -> &'static str {
         "review" => PROMPT_REVIEW,
         "merge_resolve" => PROMPT_MERGE_RESOLVE,
         "merge_strategy" => PROMPT_MERGE_STRATEGY,
+        "generate_gitignore" => PROMPT_GITIGNORE,
         _ => PROMPT_EXPLAIN,
     }
 }
@@ -321,6 +343,15 @@ pub fn build_user_message(
             format!(
                 "Repository Context:\n{}\n\n{}\n\nPlease recommend the best merge/rebase strategy given the current repository state.",
                 context_str, notes
+            )
+        }
+        "generate_gitignore" => {
+            let file_listing = query.unwrap_or("No file listing available.");
+            let existing = error.map(|e| format!("\n\nExisting .gitignore:\n{}", e))
+                .unwrap_or_default();
+            format!(
+                "Project File Structure:\n{}{}\n\nGenerate a comprehensive .gitignore for this project.",
+                file_listing, existing
             )
         }
         _ => {

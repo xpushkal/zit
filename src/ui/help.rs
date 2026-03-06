@@ -28,6 +28,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("a", "Open AI Mentor"),
             ("x", "Open Stash view"),
             ("m", "Open Merge Resolve view"),
+            ("w", "Open Workflow Builder"),
             ("?", "Toggle this help"),
             ("q", "Quit"),
             ("Ctrl+C", "Force quit"),
@@ -131,6 +132,21 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
             ("F or Ctrl+F", "Continue/finalize merge"),
             ("q", "Back to Dashboard"),
         ],
+        View::WorkflowBuilder => vec![
+            ("h/l or ←/→", "Navigate steps"),
+            ("a", "Add new step"),
+            ("Enter", "Edit selected step"),
+            ("u", "Edit action (uses)"),
+            ("r", "Edit command (run)"),
+            ("d", "Delete step"),
+            ("c", "Connect steps"),
+            ("g", "Generate YAML"),
+            ("n", "Edit workflow name"),
+            ("t", "Select triggers"),
+            ("Tab", "Skip to next field"),
+            ("Esc", "Cancel / Go back"),
+            ("q", "Back to Dashboard"),
+        ],
     };
 
     let view_name = match current_view {
@@ -145,6 +161,7 @@ pub fn render(f: &mut Frame, area: Rect, current_view: View) {
         View::AiMentor => "AI Mentor",
         View::Stash => "Stash",
         View::MergeResolve => "Merge Resolve",
+        View::WorkflowBuilder => "Workflow Builder",
     };
 
     let mut lines = vec![
