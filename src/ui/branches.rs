@@ -110,7 +110,7 @@ pub fn render(f: &mut Frame, area: Rect, state: &mut BranchesState) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan)),
     )
-    .highlight_style(Style::default().bg(Color::DarkGray))
+    .row_highlight_style(Style::default().bg(Color::DarkGray))
     .highlight_symbol("▶ ");
 
     f.render_stateful_widget(table, area, &mut state.table_state);
