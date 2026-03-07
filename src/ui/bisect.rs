@@ -76,7 +76,8 @@ impl BisectState {
                 self.log_entries.clear();
                 self.last_output.clear();
             }
-            git::bisect::BisectPhase::InProgress { .. } | git::bisect::BisectPhase::Found { .. } => {
+            git::bisect::BisectPhase::InProgress { .. }
+            | git::bisect::BisectPhase::Found { .. } => {
                 self.mode = BisectMode::Running;
                 self.log_entries = git::bisect::parse_bisect_log();
             }
@@ -97,7 +98,7 @@ fn render_picker(f: &mut Frame, area: Rect, state: &mut BisectState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Instructions
-            Constraint::Min(5),   // Commit list
+            Constraint::Min(5),    // Commit list
             Constraint::Length(3), // Keybindings
         ])
         .split(area);
@@ -169,9 +170,7 @@ fn render_picker(f: &mut Frame, area: Rect, state: &mut BisectState) {
                 Span::raw(marker),
                 Span::styled(
                     format!("{} ", short),
-                    Style::default()
-                        .fg(hash_color)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(hash_color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(msg, Style::default().fg(Color::White)),
             ]))
@@ -222,7 +221,7 @@ fn render_running(f: &mut Frame, area: Rect, state: &mut BisectState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5), // Status panel
-            Constraint::Min(5),   // Bisect log
+            Constraint::Min(5),    // Bisect log
             Constraint::Length(3), // Keybindings
         ])
         .split(area);
@@ -284,9 +283,7 @@ fn render_running(f: &mut Frame, area: Rect, state: &mut BisectState) {
                     Span::styled("  First bad commit: ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         commit_hash,
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Line::from(vec![
@@ -437,8 +434,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                                     // Reset selection for good commit picker
                                     state.selected = state.commits.len().saturating_sub(1);
                                     state.list_state.select(Some(state.selected));
-                                    status_msg =
-                                        Some("Bad commit selected. Now pick the good commit.".to_string());
+                                    status_msg = Some(
+                                        "Bad commit selected. Now pick the good commit."
+                                            .to_string(),
+                                    );
                                 }
                                 BisectMode::PickGood => {
                                     if let Some(bad) = &state.bad_commit {
@@ -453,8 +452,10 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                                             }
                                             Err(e) => {
                                                 let err_str = e.to_string();
-                                                status_msg =
-                                                    Some(format!("Bisect start failed: {}", err_str));
+                                                status_msg = Some(format!(
+                                                    "Bisect start failed: {}",
+                                                    err_str
+                                                ));
                                                 ai_error = Some(err_str);
                                             }
                                         }
@@ -482,8 +483,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                         // Mark current commit as good
                         match git::bisect::bisect_good() {
                             Ok(output) => {
-                                state.last_output =
-                                    output.lines().last().unwrap_or("").to_string();
+                                state.last_output = output.lines().last().unwrap_or("").to_string();
                                 status_msg = Some("Marked as GOOD".to_string());
                                 state.refresh();
                             }
@@ -498,8 +498,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                         // Mark current commit as bad
                         match git::bisect::bisect_bad() {
                             Ok(output) => {
-                                state.last_output =
-                                    output.lines().last().unwrap_or("").to_string();
+                                state.last_output = output.lines().last().unwrap_or("").to_string();
                                 status_msg = Some("Marked as BAD".to_string());
                                 state.refresh();
                             }
@@ -514,8 +513,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                         // Skip current commit
                         match git::bisect::bisect_skip() {
                             Ok(output) => {
-                                state.last_output =
-                                    output.lines().last().unwrap_or("").to_string();
+                                state.last_output = output.lines().last().unwrap_or("").to_string();
                                 status_msg = Some("Skipped commit".to_string());
                                 state.refresh();
                             }

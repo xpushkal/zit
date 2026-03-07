@@ -120,8 +120,7 @@ impl CherryPickState {
 
     fn load_commits(&mut self) {
         if let Some(ref branch) = self.source_branch {
-            self.commits =
-                git::cherry_pick::get_cherry_candidates(branch, 100).unwrap_or_default();
+            self.commits = git::cherry_pick::get_cherry_candidates(branch, 100).unwrap_or_default();
             self.commit_selected = 0;
             self.commit_list_state.select(if self.commits.is_empty() {
                 None
@@ -148,7 +147,7 @@ fn render_branch_select(f: &mut Frame, area: Rect, state: &mut CherryPickState) 
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header
-            Constraint::Min(5),   // Branch list
+            Constraint::Min(5),    // Branch list
             Constraint::Length(3), // Keys
         ])
         .split(area);
@@ -254,7 +253,7 @@ fn render_commit_select(f: &mut Frame, area: Rect, state: &mut CherryPickState) 
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header
-            Constraint::Min(5),   // Content
+            Constraint::Min(5),    // Content
             Constraint::Length(3), // Keys
         ])
         .split(area);
@@ -376,10 +375,7 @@ fn render_commit_select(f: &mut Frame, area: Rect, state: &mut CherryPickState) 
     let diff = Paragraph::new(diff_lines)
         .block(
             Block::default()
-                .title(Span::styled(
-                    diff_title,
-                    Style::default().fg(Color::White),
-                ))
+                .title(Span::styled(diff_title, Style::default().fg(Color::White)))
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray)),
         )
@@ -434,7 +430,7 @@ fn render_in_progress(f: &mut Frame, area: Rect, state: &mut CherryPickState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5), // Status
-            Constraint::Min(5),   // Diff / conflict info
+            Constraint::Min(5),    // Diff / conflict info
             Constraint::Length(3), // Keys
         ])
         .split(area);
@@ -481,8 +477,8 @@ fn render_in_progress(f: &mut Frame, area: Rect, state: &mut CherryPickState) {
     f.render_widget(status, chunks[0]);
 
     // Show git status
-    let status_output = git::run_git(&["status", "--short"])
-        .unwrap_or_else(|_| "Unable to get status".to_string());
+    let status_output =
+        git::run_git(&["status", "--short"]).unwrap_or_else(|_| "Unable to get status".to_string());
     let status_lines: Vec<Line> = status_output
         .lines()
         .map(|line| {
@@ -493,7 +489,10 @@ fn render_in_progress(f: &mut Frame, area: Rect, state: &mut CherryPickState) {
             } else {
                 Color::White
             };
-            Line::from(Span::styled(format!("  {}", line), Style::default().fg(color)))
+            Line::from(Span::styled(
+                format!("  {}", line),
+                Style::default().fg(color),
+            ))
         })
         .collect();
 
@@ -617,8 +616,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                                             .to_string(),
                                     );
                                 } else {
-                                    status_msg =
-                                        Some(format!("Cherry-pick failed: {}", err_str));
+                                    status_msg = Some(format!("Cherry-pick failed: {}", err_str));
                                     ai_error = Some(err_str);
                                 }
                             }
@@ -629,8 +627,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                         let short = commit.short_hash.clone();
                         match git::cherry_pick::cherry_pick(&hash) {
                             Ok(_) => {
-                                status_msg =
-                                    Some(format!("Cherry-picked {} ✓", short));
+                                status_msg = Some(format!("Cherry-picked {} ✓", short));
                                 state.mode = CherryPickMode::BranchSelect;
                                 state.refresh();
                             }
@@ -644,8 +641,7 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                                             .to_string(),
                                     );
                                 } else {
-                                    status_msg =
-                                        Some(format!("Cherry-pick failed: {}", err_str));
+                                    status_msg = Some(format!("Cherry-pick failed: {}", err_str));
                                     ai_error = Some(err_str);
                                 }
                             }
@@ -671,36 +667,32 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
             },
 
             CherryPickMode::InProgress => match key.code {
-                KeyCode::Char('c') => {
-                    match git::cherry_pick::cherry_pick_continue() {
-                        Ok(_) => {
-                            status_msg = Some("Cherry-pick continued ✓".to_string());
-                            state.conflict_active = false;
-                            state.mode = CherryPickMode::BranchSelect;
-                            state.refresh();
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            status_msg = Some(format!("Continue failed: {}", err_str));
-                            ai_error = Some(err_str);
-                        }
+                KeyCode::Char('c') => match git::cherry_pick::cherry_pick_continue() {
+                    Ok(_) => {
+                        status_msg = Some("Cherry-pick continued ✓".to_string());
+                        state.conflict_active = false;
+                        state.mode = CherryPickMode::BranchSelect;
+                        state.refresh();
                     }
-                }
-                KeyCode::Char('A') => {
-                    match git::cherry_pick::cherry_pick_abort() {
-                        Ok(_) => {
-                            status_msg = Some("Cherry-pick aborted.".to_string());
-                            state.conflict_active = false;
-                            state.mode = CherryPickMode::BranchSelect;
-                            state.refresh();
-                        }
-                        Err(e) => {
-                            let err_str = e.to_string();
-                            status_msg = Some(format!("Abort failed: {}", err_str));
-                            ai_error = Some(err_str);
-                        }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Continue failed: {}", err_str));
+                        ai_error = Some(err_str);
                     }
-                }
+                },
+                KeyCode::Char('A') => match git::cherry_pick::cherry_pick_abort() {
+                    Ok(_) => {
+                        status_msg = Some("Cherry-pick aborted.".to_string());
+                        state.conflict_active = false;
+                        state.mode = CherryPickMode::BranchSelect;
+                        state.refresh();
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        status_msg = Some(format!("Abort failed: {}", err_str));
+                        ai_error = Some(err_str);
+                    }
+                },
                 _ => {}
             },
         }
