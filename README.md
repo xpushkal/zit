@@ -2,10 +2,12 @@
 
 > **zit** is an AI-powered, terminal-based Git and GitHub assistant built in Rust. It combines a rich TUI with intelligent AI mentorship to make Git accessible, safe, and educational.
 
+
 [![License](https://img.shields.io/github/license/JUSTMEETPATEL/zit)](LICENSE)
 [![Rust](https://img.shields.io/badge/built_with-Rust-orange)](https://www.rust-lang.org/)
 [![CI](https://img.shields.io/github/actions/workflow/status/JUSTMEETPATEL/zit/ci.yml?label=CI)](https://github.com/JUSTMEETPATEL/zit/actions)
 [![Release](https://img.shields.io/github/v/release/JUSTMEETPATEL/zit)](https://github.com/JUSTMEETPATEL/zit/releases)
+
 
 ## Features
 
