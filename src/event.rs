@@ -1,4 +1,4 @@
-use crossterm::event::{self, Event, KeyEvent, MouseEvent};
+use crossterm::event::{self, Event, KeyEvent, KeyEventKind, MouseEvent};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -28,7 +28,7 @@ impl EventHandler {
                 // Poll for crossterm events with tick_rate timeout
                 if event::poll(tick_rate).unwrap_or(false) {
                     match event::read() {
-                        Ok(Event::Key(key)) => {
+                        Ok(Event::Key(key)) if key.kind == KeyEventKind::Press => {
                             if event_tx.send(AppEvent::Key(key)).is_err() {
                                 return;
                             }
