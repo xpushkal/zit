@@ -1,8 +1,8 @@
 # Product Requirements Document: zit
 
-**Version:** 1.0
+**Version:** 2.0
 
-**Last Updated:** March 1, 2026
+**Last Updated:** March 25, 2026
 
 ---
 
@@ -235,11 +235,11 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 
 ### 8. GitHub Integration (TUI)
 
- **User Story** : As a developer, I want to create repositories and manage collaborators from the terminal so I don't have to leave my workflow.
+ **User Story** : As a developer, I want to manage GitHub repositories, pull requests, and CI/CD from the terminal so I don't have to leave my workflow.
 
  **Requirements** :
 
-* Authenticate with GitHub via personal access token (PAT)
+* Authenticate with GitHub via OAuth device flow (no PAT copy-paste needed)
 * Create new GitHub repository (public or private)
 * Set repository description and default branch name
 * Add repository as remote to local Git repo
@@ -248,13 +248,23 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 * Add collaborators by GitHub username
 * Remove collaborators with confirmation
 * View collaborator permissions (read, write, admin)
+* List open/closed pull requests with full details
+* View PR files changed, reviews, and mergeable status
+* Merge pull requests (merge, squash, or rebase strategies)
+* Close pull requests with confirmation
+* View GitHub Actions workflow runs and job status
+* Drill into individual job logs for debugging
 
  **Acceptance Criteria** :
 
-* Authentication persists across sessions (secure token storage)
+* OAuth device flow completes without user needing to copy tokens
+* Authentication persists across sessions (secure token storage in OS keychain)
 * Repository creation completes in <5s
 * Push operation shows progress indicator
 * Collaborator operations reflect in GitHub within 10s
+* PR list/detail loads within 2s
+* Merge method selection works correctly for all three strategies
+* Actions log viewer displays complete job output
 * API errors are translated to user-friendly messages
 * Rate limiting is handled gracefully with retry logic
 
@@ -286,17 +296,29 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 * **Error Explanation** : Translate Git errors to plain English
 * Git error: `fatal: refusing to merge unrelated histories`
 * AI: "These branches don't share a common ancestor. Use `--allow-unrelated-histories` if you're combining separate projects, or check if you're in the right repository."
+* **Learn Mode** : Explain Git concepts in depth on demand
+* **Ask Mode** : Free-form Q&A about Git operations
+* **Review Mode** : Analyze staged changes for potential issues
+* **Merge Resolution** : AI-powered conflict resolution suggestions
+* **Reset Recommendation** : Suggest safest reset type for the situation
+* **Gitignore Generation** : Generate project-specific .gitignore files
 
 #### Technical Implementation
 
-* Serverless backend on AWS Lambda (Python 3.12)
-* LLM access via Amazon Bedrock (Claude 3 Sonnet)
+* **Multi-provider architecture** with common `AiProvider` trait:
+  * Amazon Bedrock via AWS Lambda (Python 3.12 backend)
+  * OpenAI-compatible API (OpenAI and OpenRouter)
+  * Anthropic native Messages API
+  * Ollama for local/offline inference
 * API Gateway with API key auth + usage plan (5,000 req/month, 10 req/sec)
 * Context sent: repo state, command intent, relevant diffs, error messages
 * Non-blocking: AI calls run on a background thread via `mpsc::channel`
-* Automatic retry with exponential backoff (3 attempts)
+* Response caching with 5-minute TTL and 50-entry max
+* Automatic retry with exponential backoff (up to 2 retries)
 * Fallback to basic help text if AI unavailable
-* Privacy: diffs truncated to 3,000 chars, response body capped at 5,000 chars
+* Privacy: diffs truncated to 4,000 chars
+* 9 specialized prompt templates for different interaction modes
+* 12 distinct AI action types dispatched through a unified pipeline
 
  **Acceptance Criteria** :
 
@@ -305,7 +327,133 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 * Recommendations clearly indicate safety level (safe/caution/destructive)
 * Error explanations include both "what happened" and "how to fix"
 * User can disable AI layer via config if desired
+* All 5 providers work correctly with provider-specific auth
 * Backend handles rate limiting and retries gracefully
+* Cached responses are returned instantly on repeat queries
+
+---
+
+### 10. Stash Management
+
+ **User Story** : As a developer, I want to quickly save and restore uncommitted work so I can switch contexts without losing changes.
+
+ **Requirements** :
+
+* List all stashes with index, message, and branch
+* Push current changes to stash with optional message
+* Pop stash (apply + remove) by index
+* Apply stash (keep in list) by index
+* Drop individual stash entries with confirmation
+* Clear all stashes with safety confirmation
+* Preview stash diff before applying
+
+ **Acceptance Criteria** :
+
+* Stash list updates immediately after push/pop/drop operations
+* Pop and apply correctly restore changes to working tree
+* Clear operation requires explicit confirmation
+* Stash diff preview loads in <1s
+* Works correctly with both staged and unstaged changes
+
+---
+
+### 11. Merge/Conflict Resolution
+
+ **User Story** : As a developer, I want to resolve merge conflicts visually and understand each conflict so I can merge branches confidently without losing code.
+
+ **Requirements** :
+
+* Auto-detect merge, rebase, and cherry-pick in progress
+* List all conflicted files with file status
+* Navigate between conflict regions within a file
+* Preview both sides of each conflict (current/HEAD vs incoming)
+* Support both standard and diff3 conflict marker styles
+* Resolve individual regions: accept current, accept incoming, or AI suggestion
+* AI-powered merge resolution with ACCEPT_CURRENT/ACCEPT_INCOMING/MERGE_BOTH recommendations
+* Stage resolved files
+* Continue or abort the merge/rebase/cherry-pick operation
+* Pre-merge conflict check using `git merge-tree` (with legacy fallback)
+
+ **Acceptance Criteria** :
+
+* Correctly detects all three in-progress operation types
+* Conflict markers are parsed accurately for standard and diff3 styles
+* Region navigation works smoothly with keyboard shortcuts
+* AI resolution suggestions are contextually appropriate
+* Continue/abort operations work for merge, rebase, and cherry-pick
+* Resolved files are properly staged
+
+---
+
+### 12. Workflow Builder
+
+ **User Story** : As a developer, I want to visually create GitHub Actions workflows so I can set up CI/CD without writing YAML from scratch.
+
+ **Requirements** :
+
+* Visual node-based workflow editor
+* Supported step types: Checkout, Setup (language), Run Command, Cache, Upload Artifact, Download Artifact, Deploy
+* Add, edit, and delete workflow steps
+* Configure trigger events (push, pull_request, schedule, workflow_dispatch, release)
+* Define connections between steps (execution order)
+* Preview generated YAML before saving
+* Export workflow to `.github/workflows/` directory
+
+ **Acceptance Criteria** :
+
+* All step types generate valid GitHub Actions YAML
+* Trigger configuration maps correctly to YAML `on:` section
+* Node connections produce correct `needs:` dependencies
+* Generated YAML passes GitHub Actions syntax validation
+* Preview mode shows correctly formatted YAML
+
+---
+
+### 13. Git Bisect
+
+ **User Story** : As a developer, I want to find the commit that introduced a bug using a guided binary search so I can identify regressions quickly.
+
+ **Requirements** :
+
+* Three-phase UI: setup (pick good/bad commits), in-progress (mark commits), result (display bad commit)
+* Select bad and good commits from visual commit list
+* Display current bisect commit with hash, message, and context
+* Show estimated steps remaining (log₂ calculation)
+* Mark commits as good, bad, or skip
+* View bisect log showing all marked commits
+* Reset bisect to return to normal state
+
+ **Acceptance Criteria** :
+
+* Bisect correctly narrows down to the first bad commit
+* Steps remaining estimate is accurate
+* Skip operation works for untestable commits
+* Reset cleanly returns to pre-bisect state
+* Bisect log accurately reflects all marking decisions
+
+---
+
+### 14. Cherry-Pick
+
+ **User Story** : As a developer, I want to selectively apply commits from other branches so I can port specific changes without merging entire branches.
+
+ **Requirements** :
+
+* Three-phase UI: select source branch, select commits, preview and execute
+* List branches available as cherry-pick sources
+* Show commits unique to the source branch (not already in current branch)
+* Preview diff for selected commit before cherry-picking
+* Support cherry-picking single or multiple commits
+* Handle conflicts with abort/continue workflow
+* Detect and display when cherry-pick is already in progress
+
+ **Acceptance Criteria** :
+
+* Only shows commits not already present in current branch
+* Diff preview accurately shows what will be applied
+* Multiple commit cherry-pick applies in correct order
+* Conflict resolution integrates with merge resolve view
+* Abort cleanly reverts to pre-cherry-pick state
 
 ---
 
@@ -316,12 +464,14 @@ zit is not just a Git UI wrapper—it's a learning tool that:
  **Frontend (TUI Client)** :
 
 * **Language** : Rust (safety, performance, zero-cost abstractions)
-* **TUI Framework** : `ratatui` 0.28 (rendering) + `crossterm` 0.28 (terminal manipulation)
+* **TUI Framework** : `ratatui` 0.30 (rendering) + `crossterm` 0.29 (terminal manipulation)
 * **Git Integration** : Shell-based execution of Git commands via `std::process::Command` (source of truth)
 * **HTTP Client** : `reqwest` 0.12 (blocking + rustls-tls) for GitHub API and AI backend
 * **Serialization** : `serde` + `serde_json` + `toml` for API payloads and config
 * **Config** : `dirs` for cross-platform config directory, TOML format
 * **Error handling** : `anyhow` for ergonomic error propagation
+* **Clipboard** : `cli-clipboard` for hash/content copy
+* **Secrets** : `keyring` for OS keychain integration
 
  **Backend (AI Mentor)** :
 
@@ -332,23 +482,667 @@ zit is not just a Git UI wrapper—it's a learning tool that:
 * **Infrastructure** : AWS SAM / CloudFormation (one-command deploy via `deploy.sh`)
 * **Testing** : 27 Python unit tests, Lambda CI job in GitHub Actions
 
-### Data Flow
+ **Direct AI Providers** (alternative to Bedrock backend):
+
+* **OpenAI** : GPT-4o via OpenAI-compatible API
+* **Anthropic** : Claude Sonnet via native Messages API
+* **OpenRouter** : Multi-model routing via OpenRouter API
+* **Ollama** : Local LLM inference (Llama 3.1 default, no API key needed)
+
+---
+
+## Diagrams
+
+### 1. High-Level System Architecture
 
 ```
-User Input → crossterm → ratatui TUI → Git Commands (shell) → Parse Output → Update UI
-                                     ↓
-                            GitHub REST API (if applicable)
-                                     ↓
-                          AI Mentor (if invoked)
-                          ┌──────────────────────────────────────┐
-                          │ spawn std::thread with AiClient      │
-                          │ → HTTPS POST to Lambda (with retry)  │
-                          │ → result via mpsc::channel           │
-                          │ → poll_ai_result() dispatches to UI  │
-                          └──────────────────────────────────────┘
-                                     ↓
-                     AWS Lambda (Python 3.12) → Bedrock Claude → Response
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            USER TERMINAL                               │
+│                     (keyboard / mouse input)                           │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          main.rs (Entry Point)                         │
+│  ┌─────────────┐  ┌───────────────┐  ┌──────────────────────────────┐  │
+│  │ Terminal     │  │ EventHandler  │  │ draw() — View Router         │  │
+│  │ Setup &     │  │ (event.rs)    │  │                              │  │
+│  │ Cleanup     │  │               │  │  match app.view {            │  │
+│  │ - raw mode  │  │ Background    │  │    Dashboard => dashboard    │  │
+│  │ - alt screen│  │ thread polls  │  │    Staging   => staging      │  │
+│  │ - panic hook│  │ crossterm     │  │    Commit    => commit       │  │
+│  │             │  │ events with   │  │    Branches  => branches     │  │
+│  │             │  │ tick timeout  │  │    Timeline  => timeline     │  │
+│  │             │  │ (2000ms)      │  │    ...14 views total         │  │
+│  │             │  │               │  │  }                           │  │
+│  │             │  │ Sends:        │  │  + popup overlay             │  │
+│  │             │  │ Key/Mouse/    │  │                              │  │
+│  │             │  │ Tick/Resize   │  │                              │  │
+│  └─────────────┘  └───────┬───────┘  └──────────────────────────────┘  │
+└───────────────────────────┼─────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        app.rs (Central State)                          │
+│                                                                        │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────┐  │
+│  │ App struct        │  │ View enum (14)    │  │ Popup enum           │  │
+│  │ - running         │  │ - Dashboard       │  │ - None               │  │
+│  │ - view            │  │ - Staging         │  │ - Help               │  │
+│  │ - popup           │  │ - Commit          │  │ - Confirm{action}    │  │
+│  │ - config          │  │ - Branches        │  │ - Input{action}      │  │
+│  │ - ai_client       │  │ - Timeline        │  │ - Message            │  │
+│  │ - ai_receiver     │  │ - TimeTravel      │  │ - FollowUp{suggest}  │  │
+│  │ - status_message  │  │ - Reflog          │  └──────────────────────┘  │
+│  │ - *_state (×14)   │  │ - GitHub          │                           │
+│  │                    │  │ - AiMentor        │  ┌──────────────────────┐  │
+│  │ Methods:           │  │ - Stash           │  │ ConfirmAction enum   │  │
+│  │ - handle_key()     │  │ - MergeResolve    │  │ - DeleteBranch       │  │
+│  │ - handle_mouse()   │  │ - WorkflowBuilder │  │ - HardReset          │  │
+│  │ - refresh()        │  │ - Bisect          │  │ - MixedReset         │  │
+│  │ - poll_ai_result() │  │ - CherryPick      │  │ - AbortMerge         │  │
+│  │ - start_ai_*()     │  │                   │  │ - MergePullRequest   │  │
+│  └──────────────────┘  └──────────────────┘  │ - DiscardFile ...     │  │
+│                                               └──────────────────────┘  │
+└──────────┬──────────────────────┬──────────────────────┬────────────────┘
+           │                      │                      │
+           ▼                      ▼                      ▼
+┌──────────────────┐  ┌──────────────────────┐  ┌────────────────────────┐
+│   src/git/       │  │     src/ui/          │  │     src/ai/            │
+│                  │  │                      │  │                        │
+│ runner.rs (exec) │  │ dashboard.rs         │  │ client.rs              │
+│ status.rs        │  │ staging.rs           │  │  - AiClient            │
+│ diff.rs          │  │ commit.rs            │  │  - cache (5min TTL)    │
+│ branch.rs        │  │ branches.rs          │  │  - retry + backoff     │
+│ log.rs           │  │ timeline.rs          │  │                        │
+│ remote.rs        │  │ time_travel.rs       │  │ provider.rs            │
+│ stash.rs         │  │ reflog.rs            │  │  - BedrockProvider     │
+│ reflog.rs        │  │ github.rs            │  │  - OpenAiProvider      │
+│ merge.rs         │  │ ai_mentor.rs         │  │  - AnthropicProvider   │
+│ bisect.rs        │  │ stash.rs             │  │  - OllamaProvider      │
+│ cherry_pick.rs   │  │ merge_resolve.rs     │  │                        │
+│ github_auth.rs   │  │ workflow_builder.rs  │  │ prompts.rs             │
+│                  │  │ bisect.rs            │  │  - 9 prompt templates  │
+│ All shell out to │  │ cherry_pick.rs       │  │                        │
+│ real `git` CLI   │  │ help.rs / utils.rs   │  │ Non-blocking via       │
+│ via Command      │  │                      │  │ std::thread + mpsc     │
+└──────────────────┘  └──────────────────────┘  └────────────────────────┘
 ```
+
+### 2. View Navigation Map
+
+```
+                              ┌─────────────────┐
+                              │    DASHBOARD     │
+                              │   (home view)    │
+                              └───────┬─────────┘
+                                      │
+          ┌───────────────────────────┼───────────────────────────┐
+          │           │       │       │       │       │           │
+          ▼           ▼       ▼       ▼       ▼       ▼           ▼
+     ┌─────────┐ ┌────────┐ ┌──┐ ┌────────┐ ┌──┐ ┌────────┐ ┌────────┐
+     │Staging  │ │Commit  │ │  │ │Timeline│ │  │ │GitHub  │ │AI      │
+     │  [s]    │ │  [c]   │ │  │ │  [l]   │ │  │ │  [g]   │ │Mentor  │
+     └─────────┘ └────────┘ │  │ └────────┘ │  │ └────────┘ │  [a]   │
+                             │  │            │  │            └────────┘
+     ┌─────────┐ ┌────────┐ │  │ ┌────────┐ │  │ ┌────────┐ ┌────────┐
+     │Branches │ │Time    │ │  │ │Reflog  │ │  │ │Stash   │ │Merge   │
+     │  [b]    │ │Travel  │ │  │ │  [r]   │ │  │ │  [x]   │ │Resolve │
+     └─────────┘ │  [t]   │ │  │ └────────┘ │  │ └────────┘ │  [m]   │
+                 └────────┘ │  │            │  │            └────────┘
+                             │  │            │  │
+     ┌─────────┐ ┌────────┐ │  │            │  │
+     │Workflow │ │Bisect  │ │  │            │  │
+     │Builder  │ │  [B]   │ │  │            │  │
+     │  [w]    │ └────────┘ │  │            │  │
+     └─────────┘            │  │            │  │
+                 ┌────────┐ │  │            │  │
+                 │Cherry  │ │  │            │  │
+                 │Pick    │ │  │            │  │
+                 │  [p]   │ │  │            │  │
+                 └────────┘ │  │            │  │
+                             │  │            │  │
+                             └──┘            └──┘
+
+     Navigation: [q] from any view → back to Dashboard
+                 [q] from Dashboard → quit zit
+                 [?] from any view → Help popup
+                 [Ctrl+C] → force quit
+
+     GitHub Sub-Views:
+     ┌────────────────────────────────────────────────┐
+     │ GitHub [g]                                     │
+     │  ├── Menu (home)                               │
+     │  ├── Device Auth (OAuth flow)                  │
+     │  ├── Create Repository                         │
+     │  ├── Collaborators (list/add/remove)            │
+     │  ├── Pull Requests (list → detail)             │
+     │  │     └── Detail: Overview / Files / Reviews   │
+     │  │         Actions: Merge (3 methods) / Close   │
+     │  └── Actions (workflow runs → job detail/logs)  │
+     └────────────────────────────────────────────────┘
+```
+
+### 3. Event Loop & Data Flow
+
+```
+     ┌──────────────────────────────────────────────────────────────┐
+     │                    EVENT LOOP (main.rs)                      │
+     │                                                              │
+     │  loop {                                                      │
+     │    ┌─────────────────────────────────────────────────────┐   │
+     │    │ 1. RENDER: terminal.draw(|f| draw(f, &app))        │   │
+     │    │    - Routes to current view's render() function     │   │
+     │    │    - Overlays popup if active                       │   │
+     │    └─────────────────────────┬───────────────────────────┘   │
+     │                              │                               │
+     │                              ▼                               │
+     │    ┌─────────────────────────────────────────────────────┐   │
+     │    │ 2. WAIT: events.next() blocks until event arrives   │   │
+     │    │    (crossterm polling on background thread)          │   │
+     │    └─────────────────────────┬───────────────────────────┘   │
+     │                              │                               │
+     │              ┌───────────────┼───────────────┐               │
+     │              ▼               ▼               ▼               │
+     │    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐       │
+     │    │ Key Event    │ │ Tick Event   │ │ Mouse Event  │       │
+     │    │              │ │ (every 2s)   │ │              │       │
+     │    │ 1. poll_ai() │ │ 1. poll_ai() │ │ 1. poll_ai() │       │
+     │    │ 2. handle_   │ │ 2. refresh() │ │ 2. handle_   │       │
+     │    │    key()     │ │ 3. poll      │ │    mouse()   │       │
+     │    │              │ │    github    │ │              │       │
+     │    └──────┬───────┘ └──────┬───────┘ └──────┬───────┘       │
+     │           │                │                │               │
+     │           └────────────────┼────────────────┘               │
+     │                            ▼                                │
+     │    ┌─────────────────────────────────────────────────────┐   │
+     │    │ 3. STATE UPDATE                                     │   │
+     │    │    - Execute git commands via git::runner            │   │
+     │    │    - Update view state structs                       │   │
+     │    │    - Set status_message for status bar               │   │
+     │    │    - Show popup if confirmation needed               │   │
+     │    └─────────────────────────────────────────────────────┘   │
+     │                                                              │
+     │    if !app.running → break                                   │
+     │  }                                                           │
+     └──────────────────────────────────────────────────────────────┘
+```
+
+### 4. AI Integration Architecture
+
+```
+     ┌────────────────────────────────────────────────────────────────┐
+     │                     AI CALL LIFECYCLE                          │
+     │                                                                │
+     │  User triggers AI action (e.g., commit suggest, error explain) │
+     │                          │                                     │
+     │                          ▼                                     │
+     │  ┌──────────────────────────────────────┐                     │
+     │  │ app.start_ai_*() in app.rs           │                     │
+     │  │  1. Clone Arc<AiClient>              │                     │
+     │  │  2. Gather context (repo state,      │                     │
+     │  │     staged diff, error msg, etc.)    │                     │
+     │  │  3. Set ai_loading = true            │                     │
+     │  │  4. Set ai_action = AiAction::*      │                     │
+     │  └──────────────┬───────────────────────┘                     │
+     │                 │                                              │
+     │                 ▼                                              │
+     │  ┌──────────────────────────────────────┐                     │
+     │  │ std::thread::spawn                   │                     │
+     │  │  - Runs AiClient method              │                     │
+     │  │  - Checks cache (5min TTL, 50 max)   │                     │
+     │  │  - Retries with exponential backoff   │                     │
+     │  │    (up to 2 retries)                  │                     │
+     │  │  - Sends result via mpsc::channel     │◄──── NON-BLOCKING  │
+     │  └──────────────┬───────────────────────┘                     │
+     │                 │                                              │
+     │                 ▼                                              │
+     │  ┌──────────────────────────────────────┐                     │
+     │  │ Provider dispatch (provider.rs)      │                     │
+     │  │                                      │                     │
+     │  │  ┌────────────┐  ┌────────────────┐  │                     │
+     │  │  │ Bedrock    │  │ OpenAI-compat  │  │                     │
+     │  │  │ (Lambda)   │  │ (OpenAI /      │  │                     │
+     │  │  │ x-api-key  │  │  OpenRouter)   │  │                     │
+     │  │  └─────┬──────┘  └───────┬────────┘  │                     │
+     │  │        │                 │            │                     │
+     │  │  ┌─────┴──────┐  ┌──────┴─────────┐  │                     │
+     │  │  │ Anthropic  │  │ Ollama         │  │                     │
+     │  │  │ (native    │  │ (local, no     │  │                     │
+     │  │  │  Messages) │  │  auth needed)  │  │                     │
+     │  │  └────────────┘  └────────────────┘  │                     │
+     │  └──────────────────────────────────────┘                     │
+     │                 │                                              │
+     │                 ▼                                              │
+     │  ┌──────────────────────────────────────┐                     │
+     │  │ poll_ai_result() on each event tick  │                     │
+     │  │  - try_recv() on mpsc channel        │                     │
+     │  │  - Dispatch based on ai_action:      │                     │
+     │  │    CommitSuggest → commit_state.msg   │                     │
+     │  │    ExplainRepo   → ai_mentor result   │                     │
+     │  │    ExplainError  → status_message     │                     │
+     │  │    MergeResolve  → merge suggestion   │                     │
+     │  │    ResetSuggest  → time_travel rec    │                     │
+     │  │  - Set ai_loading = false             │                     │
+     │  └──────────────────────────────────────┘                     │
+     └────────────────────────────────────────────────────────────────┘
+
+     AI Action Types (AiAction enum):
+     ┌──────────────────┬─────────────────────────────────────────────┐
+     │ Action           │ Description                                 │
+     ├──────────────────┼─────────────────────────────────────────────┤
+     │ CommitSuggest    │ Generate commit message from staged diff    │
+     │ ExplainRepo      │ Explain current repository state            │
+     │ ExplainError     │ Translate git error to plain English        │
+     │ Recommend        │ Suggest safest next actions                 │
+     │ HealthCheck      │ Verify AI provider connectivity             │
+     │ ReviewDiff       │ Review staged changes for issues            │
+     │ AskQuestion      │ Free-form Q&A about Git                    │
+     │ Learn            │ Explain a Git concept in depth              │
+     │ MergeResolve     │ Suggest conflict resolution strategy        │
+     │ MergeStrategy    │ Recommend merge vs rebase approach          │
+     │ ResetSuggest     │ Recommend safe reset type                   │
+     │ GenerateGitignore│ Generate .gitignore for project type        │
+     └──────────────────┴─────────────────────────────────────────────┘
+```
+
+### 5. GitHub OAuth Device Flow
+
+```
+     ┌──────────┐          ┌────────────┐          ┌──────────────┐
+     │   User   │          │   zit TUI  │          │  GitHub API  │
+     └────┬─────┘          └─────┬──────┘          └──────┬───────┘
+          │                      │                        │
+          │  Press [g] → GitHub  │                        │
+          │─────────────────────>│                        │
+          │                      │                        │
+          │                      │  POST /login/device/   │
+          │                      │  code                  │
+          │                      │  {client_id, scope:    │
+          │                      │   "repo,read:user"}    │
+          │                      │───────────────────────>│
+          │                      │                        │
+          │                      │  {user_code,           │
+          │                      │   device_code,         │
+          │                      │   verification_uri}    │
+          │                      │<───────────────────────│
+          │                      │                        │
+          │  Display:            │                        │
+          │  "Go to github.com/  │                        │
+          │   login/device and   │                        │
+          │   enter: ABCD-1234"  │                        │
+          │<─────────────────────│                        │
+          │                      │                        │
+          │  User enters code    │                        │
+          │  in browser ─────────┼───────────────────────>│
+          │                      │                        │
+          │                      │  Poll: POST /login/    │
+          │                      │  oauth/access_token    │
+          │                      │  (on each tick event)  │
+          │                      │───────────────────────>│
+          │                      │                        │
+          │                      │  "authorization_       │
+          │                      │   pending" (repeat)    │
+          │                      │<───────────────────────│
+          │                      │         ...            │
+          │                      │  {access_token}        │
+          │                      │<───────────────────────│
+          │                      │                        │
+          │                      │  Store token in OS     │
+          │                      │  keychain (keyring)    │
+          │                      │                        │
+          │  "Authenticated as   │                        │
+          │   @username"         │                        │
+          │<─────────────────────│                        │
+          │                      │                        │
+```
+
+### 6. Git Operation Safety Layer
+
+```
+     ┌────────────────────────────────────────────────────────────────┐
+     │              SAFETY CONFIRMATION FLOW                         │
+     │                                                                │
+     │  User Action (e.g., delete branch, hard reset, discard file)  │
+     │                          │                                     │
+     │                          ▼                                     │
+     │               ┌─────────────────────┐                         │
+     │               │ Is this operation   │                         │
+     │               │ destructive?        │                         │
+     │               └────────┬────────────┘                         │
+     │                   Yes/ │ \No                                   │
+     │                  /     │  \                                    │
+     │                 ▼      │   ▼                                   │
+     │  ┌──────────────────┐  │  ┌──────────────────┐               │
+     │  │ Show Confirm     │  │  │ Execute directly  │               │
+     │  │ Popup with:      │  │  │ + update state    │               │
+     │  │ - Plain English  │  │  │ + status message   │               │
+     │  │   explanation    │  │  └──────────────────┘               │
+     │  │ - Impact warning │  │                                      │
+     │  │ - [y] / [n]     │  │                                      │
+     │  └────────┬─────────┘  │                                      │
+     │      Yes/ │ \No        │                                      │
+     │     /     │  \         │                                      │
+     │    ▼      │   ▼        │                                      │
+     │  Execute  │  Cancel    │                                      │
+     │  action   │  + msg     │                                      │
+     │    │      │            │                                      │
+     │    ▼      │            │                                      │
+     │  On Error:│            │                                      │
+     │  ┌────────┴──────────────┐                                    │
+     │  │ 1. Display error msg  │                                    │
+     │  │ 2. start_ai_error_    │                                    │
+     │  │    explain() if AI    │                                    │
+     │  │    enabled            │                                    │
+     │  │ 3. Show FollowUp      │                                    │
+     │  │    popup with         │                                    │
+     │  │    suggested fixes    │                                    │
+     │  └───────────────────────┘                                    │
+     └────────────────────────────────────────────────────────────────┘
+
+     Destructive Operations Requiring Confirmation:
+     ┌────────────────────────────────────────────────────┐
+     │ ConfirmAction        │ Safety Level                │
+     ├──────────────────────┼─────────────────────────────┤
+     │ HardReset            │ ⚠ DESTRUCTIVE (2-step)     │
+     │ DiscardFile          │ ⚠ DESTRUCTIVE              │
+     │ ClearStash           │ ⚠ DESTRUCTIVE              │
+     │ MixedReset           │ ⚡ CAUTION                  │
+     │ SoftReset            │ ⚡ CAUTION                  │
+     │ DeleteBranch         │ ⚡ CAUTION                  │
+     │ AbortMerge           │ ⚡ CAUTION                  │
+     │ RemoveCollaborator   │ ⚡ CAUTION                  │
+     │ MergePullRequest     │ ⚡ CAUTION                  │
+     │ ClosePullRequest     │ ⚡ CAUTION                  │
+     │ ContinueMerge        │ ✓ SAFE (informational)     │
+     └──────────────────────┴─────────────────────────────┘
+```
+
+### 7. Module Dependency Graph
+
+```
+                              main.rs
+                                │
+                    ┌───────────┼───────────┐
+                    │           │           │
+                    ▼           ▼           ▼
+                event.rs     app.rs     config.rs
+                              │ │          │
+                    ┌─────────┘ └──────┐   │
+                    │                  │   │
+                    ▼                  ▼   ▼
+               ┌─────────┐      ┌──────────────┐
+               │  ui/*   │      │    git/*      │
+               │         │      │              │
+               │ 14 view │      │  runner.rs ◄─┼── all git modules
+               │ renderers│      │  status.rs   │   call run_git()
+               │         │      │  diff.rs     │
+               │ Each has │      │  branch.rs   │
+               │ render() │      │  log.rs      │
+               │ function │      │  remote.rs   │
+               │         │      │  stash.rs    │
+               └─────────┘      │  reflog.rs   │
+                                │  merge.rs    │
+                                │  bisect.rs   │
+               ┌─────────┐      │  cherry_pick │
+               │  ai/*   │      │  github_auth │
+               │         │      └──────────────┘
+               │ client  │
+               │ provider│◄── dispatches to 4 providers
+               │ prompts │◄── 9 prompt templates
+               └─────────┘
+                    │
+                    ▼
+          ┌─────────────────┐
+          │  keychain.rs    │
+          │  (OS secrets)   │
+          └─────────────────┘
+
+     Data ownership: app.rs owns ALL state.
+     ui/* modules are pure renderers (read state, produce widgets).
+     git/* modules are stateless (run command, return parsed result).
+     ai/* modules manage async lifecycle (thread + channel + cache).
+```
+
+### 8. Merge/Conflict Resolution Flow
+
+```
+     ┌─────────────────────────────────────────────────────────────┐
+     │                 MERGE RESOLUTION PIPELINE                   │
+     │                                                              │
+     │  Detect merge state:                                        │
+     │  ┌────────────────────────────────────────────────────────┐  │
+     │  │ Check for:                                             │  │
+     │  │  .git/MERGE_HEAD      → merge in progress              │  │
+     │  │  .git/rebase-merge/   → rebase in progress             │  │
+     │  │  .git/CHERRY_PICK_HEAD → cherry-pick in progress       │  │
+     │  └───────────────┬────────────────────────────────────────┘  │
+     │                  │                                           │
+     │                  ▼                                           │
+     │  ┌────────────────────────────────────────────────────────┐  │
+     │  │ List conflicted files (git status --porcelain=v2)      │  │
+     │  │ For each file:                                         │  │
+     │  │   1. Read raw file content                             │  │
+     │  │   2. Parse conflict markers:                           │  │
+     │  │      <<<<<<< HEAD                                      │  │
+     │  │      (current/ours content)                             │  │
+     │  │      ||||||| (base, if diff3 style)                    │  │
+     │  │      =======                                            │  │
+     │  │      (incoming/theirs content)                          │  │
+     │  │      >>>>>>> branch-name                                │  │
+     │  │   3. Build ConflictRegion structs                      │  │
+     │  └───────────────┬────────────────────────────────────────┘  │
+     │                  │                                           │
+     │                  ▼                                           │
+     │  ┌────────────────────────────────────────────────────────┐  │
+     │  │ Resolution options per region:                         │  │
+     │  │                                                        │  │
+     │  │  [c] Accept Current (HEAD/ours)                        │  │
+     │  │  [i] Accept Incoming (theirs)                          │  │
+     │  │  [a] Ask AI for smart merge suggestion                 │  │
+     │  │      └─► AI returns: ACCEPT_CURRENT / ACCEPT_INCOMING  │  │
+     │  │          / MERGE_BOTH with resolved content             │  │
+     │  │                                                        │  │
+     │  │  After all regions resolved:                           │  │
+     │  │  [Enter] Stage file → git add                          │  │
+     │  │  [C] Continue merge/rebase/cherry-pick                 │  │
+     │  │  [A] Abort merge/rebase/cherry-pick                    │  │
+     │  └────────────────────────────────────────────────────────┘  │
+     └─────────────────────────────────────────────────────────────┘
+```
+
+### 9. Bisect Workflow State Machine
+
+```
+     ┌─────────────────────────────────────────────────────────┐
+     │                BISECT STATE MACHINE                     │
+     │                                                          │
+     │  Phase 1: SETUP (commit picker)                         │
+     │  ┌──────────────────────────────────────────────────┐   │
+     │  │  Show commit list from git log                   │   │
+     │  │  User selects:                                   │   │
+     │  │    [b] Mark as BAD commit (known broken)         │   │
+     │  │    [g] Mark as GOOD commit (known working)       │   │
+     │  │  → git bisect start                              │   │
+     │  │  → git bisect bad <hash>                         │   │
+     │  │  → git bisect good <hash>                        │   │
+     │  └────────────────────┬─────────────────────────────┘   │
+     │                       │                                  │
+     │                       ▼                                  │
+     │  Phase 2: IN PROGRESS (binary search)                   │
+     │  ┌──────────────────────────────────────────────────┐   │
+     │  │  Git checks out midpoint commit                  │   │
+     │  │  Display:                                        │   │
+     │  │    - Current commit hash + message               │   │
+     │  │    - Steps remaining (log₂ estimate)             │   │
+     │  │    - Revisions left to test                      │   │
+     │  │  User marks:                                     │   │
+     │  │    [g] GOOD → git bisect good                    │   │
+     │  │    [b] BAD  → git bisect bad                     │   │
+     │  │    [s] SKIP → git bisect skip                    │   │
+     │  │  Repeat until found                              │   │
+     │  └────────────────────┬─────────────────────────────┘   │
+     │                       │                                  │
+     │                       ▼                                  │
+     │  Phase 3: FOUND (result display)                        │
+     │  ┌──────────────────────────────────────────────────┐   │
+     │  │  Display the first bad commit:                   │   │
+     │  │    - Hash, author, date, message                 │   │
+     │  │  Options:                                        │   │
+     │  │    [l] View bisect log                           │   │
+     │  │    [r] Reset bisect (git bisect reset)           │   │
+     │  │    [q] Return to dashboard                       │   │
+     │  └──────────────────────────────────────────────────┘   │
+     └─────────────────────────────────────────────────────────┘
+```
+
+### 10. Configuration & Secrets Architecture
+
+```
+     ┌─────────────────────────────────────────────────────────────┐
+     │                 CONFIGURATION SYSTEM                        │
+     │                                                              │
+     │  ~/.config/zit/config.toml                                  │
+     │  ┌──────────────────────────────────────────────────────┐   │
+     │  │ [general]                                            │   │
+     │  │   tick_rate_ms = 2000                                │   │
+     │  │   confirm_destructive = true                         │   │
+     │  │                                                      │   │
+     │  │ [ui]                                                 │   │
+     │  │   color_scheme = "default"                           │   │
+     │  │   show_help_hints = true                             │   │
+     │  │                                                      │   │
+     │  │ [github]                                             │   │
+     │  │   username = "..."    # cached after auth            │   │
+     │  │   # tokens stored in OS keychain, not here           │   │
+     │  │                                                      │   │
+     │  │ [ai]                                                 │   │
+     │  │   enabled = false                                    │   │
+     │  │   provider = "bedrock"  # or openai/anthropic/       │   │
+     │  │                         #    openrouter/ollama        │   │
+     │  │   model = "..."         # provider-specific default  │   │
+     │  │   endpoint = "..."      # auto-set per provider      │   │
+     │  │   timeout_secs = 30                                  │   │
+     │  └──────────────────────────────────────────────────────┘   │
+     │                                                              │
+     │  Secret Resolution Order:                                   │
+     │  ┌──────────────────────────────────────────────────────┐   │
+     │  │ 1. OS Keychain (keyring crate)                       │   │
+     │  │    └─ "zit-github-token", "zit-ai-api-key"           │   │
+     │  │ 2. Config file (plaintext fallback)                  │   │
+     │  │ 3. Environment variable: ZIT_AI_API_KEY              │   │
+     │  │                                                      │   │
+     │  │ On first run: if plaintext token found in config,    │   │
+     │  │ migrate to OS keychain automatically (keychain.rs)   │   │
+     │  └──────────────────────────────────────────────────────┘   │
+     │                                                              │
+     │  Default Models per Provider:                               │
+     │  ┌────────────────┬─────────────────────────────────────┐   │
+     │  │ bedrock        │ claude-3-sonnet                      │   │
+     │  │ openai         │ gpt-4o                               │   │
+     │  │ anthropic      │ claude-sonnet-4-20250514             │   │
+     │  │ openrouter     │ anthropic/claude-sonnet-4            │   │
+     │  │ ollama         │ llama3.1                             │   │
+     │  └────────────────┴─────────────────────────────────────┘   │
+     └─────────────────────────────────────────────────────────────┘
+```
+
+### 11. CI/CD Pipeline
+
+```
+     ┌─────────────────────────────────────────────────────────────┐
+     │              GitHub Actions CI Pipeline                     │
+     │              (on push/PR to main)                           │
+     │                                                              │
+     │  ┌──────────────────────────────────────────────────────┐   │
+     │  │ Job: Rust CI (matrix: ubuntu, macos, windows)        │   │
+     │  │                                                      │   │
+     │  │  Step 1: cargo fmt --all -- --check                  │   │
+     │  │          └─ Fail if formatting is wrong               │   │
+     │  │                      │                                │   │
+     │  │                      ▼                                │   │
+     │  │  Step 2: cargo clippy --all-targets -- -D warnings   │   │
+     │  │          └─ Warnings treated as errors                │   │
+     │  │                      │                                │   │
+     │  │                      ▼                                │   │
+     │  │  Step 3: cargo test --all-targets                    │   │
+     │  │          └─ Unit + integration tests                  │   │
+     │  └──────────────────────────────────────────────────────┘   │
+     │                                                              │
+     │  ┌──────────────────────────────────────────────────────┐   │
+     │  │ Job: Lambda CI (ubuntu, Python 3.12)                 │   │
+     │  │                                                      │   │
+     │  │  Step 1: pip install -r requirements.txt             │   │
+     │  │  Step 2: python -m pytest tests/ -v                  │   │
+     │  │          └─ 27 unit tests for AI backend              │   │
+     │  └──────────────────────────────────────────────────────┘   │
+     │                                                              │
+     │  Additional workflows:                                      │
+     │  - Release: build binaries for all platforms                 │
+     │  - Audit: cargo audit for dependency vulnerabilities         │
+     │  - Deploy: SAM deploy for Lambda backend                    │
+     └─────────────────────────────────────────────────────────────┘
+```
+
+### 12. End-to-End User Workflow: Commit with AI
+
+```
+     User                    zit TUI                 git CLI            AI Backend
+      │                        │                        │                    │
+      │  Launch `zit`          │                        │                    │
+      │───────────────────────>│                        │                    │
+      │                        │  git status            │                    │
+      │                        │  --porcelain=v2        │                    │
+      │                        │───────────────────────>│                    │
+      │                        │  branch, files, state  │                    │
+      │                        │<───────────────────────│                    │
+      │  Dashboard displayed   │                        │                    │
+      │<───────────────────────│                        │                    │
+      │                        │                        │                    │
+      │  Press [s] (staging)   │                        │                    │
+      │───────────────────────>│                        │                    │
+      │                        │  git diff              │                    │
+      │                        │───────────────────────>│                    │
+      │                        │  file diffs            │                    │
+      │                        │<───────────────────────│                    │
+      │  File list + diffs     │                        │                    │
+      │<───────────────────────│                        │                    │
+      │                        │                        │                    │
+      │  Space (stage file)    │                        │                    │
+      │───────────────────────>│  git add <file>        │                    │
+      │                        │───────────────────────>│                    │
+      │  ✓ File staged         │                        │                    │
+      │<───────────────────────│                        │                    │
+      │                        │                        │                    │
+      │  Press [c] (commit)    │                        │                    │
+      │───────────────────────>│  git diff --cached     │                    │
+      │                        │  --stat                │                    │
+      │                        │───────────────────────>│                    │
+      │                        │  staged diff stat      │                    │
+      │                        │<───────────────────────│                    │
+      │                        │                        │                    │
+      │                        │  [background thread]   │                    │
+      │                        │  suggest_commit_msg()  │                    │
+      │                        │────────────────────────┼───────────────────>│
+      │                        │                        │                    │
+      │  Commit editor shown   │                        │  LLM generates    │
+      │  (user types message)  │                        │  suggestion       │
+      │<───────────────────────│                        │                    │
+      │                        │  AI suggestion arrives  │                    │
+      │                        │<────────────────────────┼───────────────────│
+      │  "AI suggests: ..."    │                        │                    │
+      │<───────────────────────│                        │                    │
+      │                        │                        │                    │
+      │  Enter (confirm)       │                        │                    │
+      │───────────────────────>│  git commit -m "..."   │                    │
+      │                        │───────────────────────>│                    │
+      │                        │  commit created        │                    │
+      │                        │<───────────────────────│                    │
+      │  "Committed: abc1234"  │                        │                    │
+      │<───────────────────────│                        │                    │
+```
+
+---
 
 ### Key Design Decisions
 
@@ -357,20 +1151,30 @@ User Input → crossterm → ratatui TUI → Git Commands (shell) → Parse Outp
 * **Rationale** : Git is the source of truth; ensures compatibility and correctness
 * **Trade-off** : Slightly slower than library calls, but negligible in practice
 
-1. **TUI Over GUI** : Terminal-native interface
+2. **TUI Over GUI** : Terminal-native interface
 
 * **Rationale** : Developers already work in terminals; no context switching
 * **Trade-off** : Limited visual richness vs. GUI, but faster workflow
 
-1. **Opinionated Defaults** : Non-destructive operations by default
+3. **Opinionated Defaults** : Non-destructive operations by default
 
 * **Rationale** : Safety first, especially for beginners
 * **Trade-off** : Advanced users may find extra confirmations annoying (mitigated via config)
 
-1. **AI as Optional Layer** : Works without AI, enhanced with it
+4. **AI as Optional Layer** : Works without AI, enhanced with it
 
 * **Rationale** : Not everyone wants/needs AI; tool should be useful standalone
 * **Trade-off** : Two codepaths to maintain
+
+5. **Multi-Provider AI** : Support 5 AI backends (Bedrock, OpenAI, Anthropic, OpenRouter, Ollama)
+
+* **Rationale** : Users have different preferences, budgets, and privacy requirements
+* **Trade-off** : More provider code to maintain, but common trait interface keeps it manageable
+
+6. **Non-Blocking AI** : All AI calls on background threads with mpsc channels
+
+* **Rationale** : UI must never freeze waiting for network responses
+* **Trade-off** : More complex state management, but essential for good UX
 
 ---
 
