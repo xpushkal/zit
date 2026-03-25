@@ -68,7 +68,7 @@ fn main() -> Result<()> {
                 return Ok(());
             }
             "--verbose" => {
-                std::env::set_var("ZIT_LOG", "debug");
+                unsafe { std::env::set_var("ZIT_LOG", "debug") };
             }
             "--no-ai" => {
                 no_ai = true;
