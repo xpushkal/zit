@@ -70,7 +70,6 @@ impl StagingState {
         } else {
             Some(self.selected)
         });
-        self.update_diff();
     }
 
     fn filtered_files(&self) -> Vec<(usize, &StagingFile)> {
@@ -92,12 +91,12 @@ impl StagingState {
 
         if let Some(file) = self.files.get(self.selected) {
             let diffs = if file.is_staged {
-                git::diff::get_staged_diff().unwrap_or_default()
+                git::diff::get_staged_diff_for_file(&file.path).unwrap_or_default()
             } else {
-                git::diff::get_unstaged_diff().unwrap_or_default()
+                git::diff::get_unstaged_diff_for_file(&file.path).unwrap_or_default()
             };
 
-            if let Some(fd) = diffs.iter().find(|d| d.path == file.path) {
+            if let Some(fd) = diffs.first() {
                 self.file_hunks = fd.hunks.clone();
                 for hunk in &fd.hunks {
                     self.diff_lines.extend(hunk.lines.clone());
@@ -372,15 +371,21 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     // Stage all — collect unstaged paths for deferred scanning
                     let paths: Vec<String> = state
-                        .files.iter().filter(|f| !f.is_staged)
-                        .map(|f| f.path.clone()).collect();
+                        .files
+                        .iter()
+                        .filter(|f| !f.is_staged)
+                        .map(|f| f.path.clone())
+                        .collect();
                     deferred_stage = DeferredStage::ScanAll(paths);
                 }
                 KeyCode::Char('A') => {
                     // Mac-friendly alternative for Ctrl+A (stage all)
                     let paths: Vec<String> = state
-                        .files.iter().filter(|f| !f.is_staged)
-                        .map(|f| f.path.clone()).collect();
+                        .files
+                        .iter()
+                        .filter(|f| !f.is_staged)
+                        .map(|f| f.path.clone())
+                        .collect();
                     deferred_stage = DeferredStage::ScanAll(paths);
                 }
                 KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -495,7 +500,9 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
                 let rules = git::secrets::default_rules();
                 let mut all_findings = Vec::new();
                 for p in &paths {
-                    if git::secrets::is_binary(p) { continue; }
+                    if git::secrets::is_binary(p) {
+                        continue;
+                    }
                     if let Ok(content) = std::fs::read_to_string(p) {
                         all_findings.extend(git::secrets::scan_content(p, &content, &rules));
                     }

@@ -39,7 +39,7 @@ Resources:
               Action:
                 - bedrock:InvokeModel
                 - bedrock:InvokeModelWithResponseStream
-              Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+              Resource: !Sub 'arn:aws:bedrock:*::foundation-model/${BedrockModelId}*'
             - Effect: Allow
               Action:
                 - logs:CreateLogGroup

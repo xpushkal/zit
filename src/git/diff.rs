@@ -45,6 +45,18 @@ pub fn get_staged_diff() -> Result<Vec<FileDiff>> {
     Ok(parse_diff_output(&output))
 }
 
+/// Get unstaged diff for a single file.
+pub fn get_unstaged_diff_for_file(path: &str) -> Result<Vec<FileDiff>> {
+    let output = run_git(&["diff", "--", path])?;
+    Ok(parse_diff_output(&output))
+}
+
+/// Get staged diff for a single file.
+pub fn get_staged_diff_for_file(path: &str) -> Result<Vec<FileDiff>> {
+    let output = run_git(&["diff", "--cached", "--", path])?;
+    Ok(parse_diff_output(&output))
+}
+
 /// Get diff for a specific commit.
 pub fn get_commit_diff(hash: &str) -> Result<Vec<FileDiff>> {
     let output = run_git(&["diff", &format!("{}^..{}", hash, hash)])?;
