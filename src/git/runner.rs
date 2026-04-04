@@ -11,15 +11,43 @@ pub fn run_git(args: &[&str]) -> Result<String> {
     run_git_with_timeout(args, GIT_TIMEOUT)
 }
 
-/// Execute a git command with a custom timeout.
-pub fn run_git_with_timeout(args: &[&str], timeout: Duration) -> Result<String> {
-    log::debug!("git {}", args.join(" "));
-    let mut child = Command::new("git")
+/// Raw git execution without repo-root detection (used internally to find repo root).
+fn run_git_raw(args: &[&str]) -> Result<String> {
+    let child = Command::new("git")
         .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .context("Failed to execute git command")?;
+
+    let output = child
+        .wait_with_output()
+        .context("Failed to read git output")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("git {} failed: {}", args.join(" "), stderr.trim());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    Ok(stdout.trim().to_string())
+}
+
+/// Execute a git command with a custom timeout.
+pub fn run_git_with_timeout(args: &[&str], timeout: Duration) -> Result<String> {
+    log::debug!("git {}", args.join(" "));
+
+    // Find the repo root once and set it as working directory
+    let repo_root = run_git_raw(&["rev-parse", "--show-toplevel"]).ok();
+
+    let mut cmd = Command::new("git");
+    cmd.args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    if let Some(ref root) = repo_root {
+        cmd.current_dir(root);
+    }
+
+    let mut child = cmd.spawn().context("Failed to execute git command")?;
 
     let start = Instant::now();
     loop {

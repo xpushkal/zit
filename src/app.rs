@@ -1457,18 +1457,45 @@ impl App {
     /// Execute a git command from the agent's tool-use request (async, non-blocking).
     pub fn execute_agent_command(&mut self, args: Vec<String>) {
         let cmd_str = args.join(" ");
-        self.agent_state.executing_label = Some(format!("git {}", cmd_str));
         self.agent_state.command_executing = true;
+
+        // Determine if this is a git command or a file-reading command
+        let is_git = !args.is_empty() && args[0] == "git";
+        let label = if is_git {
+            format!("git {}", args[1..].join(" "))
+        } else {
+            cmd_str.clone()
+        };
+        self.agent_state.executing_label = Some(label);
 
         let args_str: Vec<String> = args.clone();
         let (tx, rx) = mpsc::channel();
         self.agent_state.command_receiver = Some(rx);
 
         std::thread::spawn(move || {
-            let args_refs: Vec<&str> = args_str.iter().map(|s| s.as_str()).collect();
-            let (output, success) = match git::run_git(&args_refs) {
-                Ok(out) => (out, true),
-                Err(e) => (e.to_string(), false),
+            let (output, success) = if is_git {
+                let args_refs: Vec<&str> = args_str[1..].iter().map(|s| s.as_str()).collect();
+                match git::run_git(&args_refs) {
+                    Ok(out) => (out, true),
+                    Err(e) => (e.to_string(), false),
+                }
+            } else {
+                // File-reading commands: cat, head, tail, grep, find, ls, wc
+                let (cmd, cmd_args) = args_str.split_first().unwrap();
+                let cmd_args: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
+                match std::process::Command::new(cmd).args(&cmd_args).output() {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                        let combined = if !stderr.is_empty() {
+                            format!("{}\n{}", stdout, stderr)
+                        } else {
+                            stdout
+                        };
+                        (combined, out.status.success())
+                    }
+                    Err(e) => (e.to_string(), false),
+                }
             };
             let _ = tx.send((cmd_str, output, success));
         });
@@ -1486,9 +1513,17 @@ impl App {
                     self.agent_state.command_receiver = None;
                     self.agent_state.executing_label = None;
 
+                    let output_preview = output
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .chars()
+                        .take(100)
+                        .collect();
+
                     self.agent_state.messages.push(agent::AgentMessage {
                         role: agent::MessageRole::ToolUse {
-                            command: cmd_str,
+                            command: cmd_str.clone(),
                             output,
                             success,
                             collapsed: false,
@@ -1497,7 +1532,15 @@ impl App {
                     });
                     self.agent_state.dirty = true;
 
-                    self.process_agent_next_tool();
+                    // Show proceed/revise/stop prompt
+                    self.agent_state.tool_result_prompt = Some(agent::ToolResultPrompt {
+                        tool_name: format!(
+                            "{} {}",
+                            if cmd_str.starts_with("git ") { "" } else { "" },
+                            cmd_str
+                        ),
+                        output_preview,
+                    });
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.agent_state.command_executing = false;
@@ -1515,11 +1558,22 @@ impl App {
         if !self.agent_state.pending_tool_uses.is_empty() {
             let (_description, args) = self.agent_state.pending_tool_uses.remove(0);
 
-            // Check if it's safe to auto-execute
-            if self.agent_state.auto_approve || agent::is_safe_command(&args) {
+            // Check if it's safe to auto-execute (git commands or file-reading commands)
+            let is_git = !args.is_empty() && args[0] == "git";
+            let is_safe = if is_git {
+                agent::is_safe_command(&args[1..])
+            } else {
+                agent::is_safe_file_command(&args)
+            };
+
+            if self.agent_state.auto_approve || is_safe {
                 self.execute_agent_command(args);
             } else {
-                let is_destructive = agent::is_destructive_command(&args);
+                let is_destructive = if is_git {
+                    agent::is_destructive_command(&args[1..])
+                } else {
+                    false
+                };
                 self.agent_state.pending_command = Some(agent::PendingCommand {
                     command: args,
                     description: _description,
@@ -1568,7 +1622,47 @@ impl App {
         }
     }
 
+    /// Shell-style argument splitting that respects double and single quotes.
+    /// e.g. `commit -m "Update zit codebase"` → ["commit", "-m", "Update zit codebase"]
+    fn shell_split(input: &str) -> Vec<String> {
+        let mut args = Vec::new();
+        let mut current = String::new();
+        let mut chars = input.chars().peekable();
+        let mut in_double_quote = false;
+        let mut in_single_quote = false;
+
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' if !in_single_quote => {
+                    // Escaped character — take next char literally
+                    if let Some(next) = chars.next() {
+                        current.push(next);
+                    }
+                }
+                '"' if !in_single_quote => {
+                    in_double_quote = !in_double_quote;
+                }
+                '\'' if !in_double_quote => {
+                    in_single_quote = !in_single_quote;
+                }
+                c if c.is_whitespace() && !in_double_quote && !in_single_quote => {
+                    if !current.is_empty() {
+                        args.push(std::mem::take(&mut current));
+                    }
+                }
+                _ => {
+                    current.push(c);
+                }
+            }
+        }
+        if !current.is_empty() {
+            args.push(current);
+        }
+        args
+    }
+
     /// Parse [TOOL_USE] blocks from an AI agent response.
+    /// Supports: git <args>, cat <path>, head <path>, tail <path>, grep <pattern> <path>, find <path>, ls <path>, wc <path>
     /// Returns (text_before_tools, tool_uses, text_after_tools).
     fn parse_agent_response(response: &str) -> (String, Vec<(String, Vec<String>)>, String) {
         let mut text_before = Vec::new();
@@ -1576,22 +1670,22 @@ impl App {
         let mut tool_uses = Vec::new();
         let mut found_first_tool = false;
 
+        let safe_cmds = &["git", "cat", "head", "tail", "grep", "find", "ls", "wc"];
+
         for line in response.lines() {
             let trimmed = line.trim();
             if let Some(cmd) = trimmed.strip_prefix("[TOOL_USE]") {
                 let cmd = cmd.trim();
-                if let Some(git_args) = cmd.strip_prefix("git ") {
-                    let args: Vec<String> =
-                        git_args.split_whitespace().map(|s| s.to_string()).collect();
-                    if !args.is_empty() {
-                        let desc = if found_first_tool {
-                            text_after.last().cloned().unwrap_or_default()
-                        } else {
-                            text_before.last().cloned().unwrap_or_default()
-                        };
-                        tool_uses.push((desc, args));
-                        found_first_tool = true;
-                    }
+                // Use shell-aware splitting to respect quoted arguments
+                let args = Self::shell_split(cmd);
+                if !args.is_empty() && safe_cmds.contains(&args[0].as_str()) {
+                    let desc = if found_first_tool {
+                        text_after.last().cloned().unwrap_or_default()
+                    } else {
+                        text_before.last().cloned().unwrap_or_default()
+                    };
+                    tool_uses.push((desc, args));
+                    found_first_tool = true;
                 }
             } else if found_first_tool {
                 text_after.push(line.to_string());
@@ -1603,7 +1697,17 @@ impl App {
         (text_before.join("\n"), tool_uses, text_after.join("\n"))
     }
 
-    /// Execute a follow-up action from the suggestion list.
+    /// Stop the agent loop and reset agent state.
+    pub fn stop_agent(&mut self) {
+        self.ai_loading = false;
+        self.ai_action = None;
+        self.ai_receiver = None;
+        self.agent_state.thinking = false;
+        self.agent_state.tool_result_prompt = None;
+        self.agent_state.pending_tool_uses.clear();
+        self.agent_state.pending_agent_text = None;
+        self.agent_state.dirty = true;
+    }
     pub fn execute_follow_up(&mut self, action: FollowUpAction) {
         match action {
             FollowUpAction::ApplyResolution(path) => {

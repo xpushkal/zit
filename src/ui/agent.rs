@@ -44,6 +44,13 @@ pub struct PendingCommand {
     pub is_destructive: bool,
 }
 
+/// State after a tool execution, asking user what to do next.
+#[derive(Debug, Clone)]
+pub struct ToolResultPrompt {
+    pub tool_name: String,
+    pub output_preview: String,
+}
+
 // ─── State ─────────────────────────────────────────────────────
 
 /// State for the Agent view.
@@ -70,6 +77,8 @@ pub struct AgentState {
     pub pending_tool_uses: Vec<(String, Vec<String>)>,
     /// Pending agent text accumulated before/between tool uses.
     pub pending_agent_text: Option<String>,
+    /// Prompt shown after tool execution: proceed, revise, or stop.
+    pub tool_result_prompt: Option<ToolResultPrompt>,
     /// Input history for Up/Down navigation.
     pub input_history: Vec<String>,
     /// Current position in input history.
@@ -103,6 +112,7 @@ impl Default for AgentState {
             auto_approve: false,
             pending_tool_uses: Vec::new(),
             pending_agent_text: None,
+            tool_result_prompt: None,
             input_history: Vec::new(),
             history_index: 0,
             command_receiver: None,
@@ -162,6 +172,15 @@ pub fn is_safe_command(args: &[String]) -> bool {
         }
         _ => false,
     }
+}
+
+/// Check if a file-reading command is safe (cat, head, etc.).
+pub fn is_safe_file_command(args: &[String]) -> bool {
+    if args.is_empty() {
+        return false;
+    }
+    let sub = args[0].as_str();
+    matches!(sub, "cat" | "head" | "tail" | "wc" | "grep" | "find" | "ls")
 }
 
 /// Check if a command is destructive/dangerous.
@@ -391,6 +410,7 @@ fn build_conversation_lines(state: &AgentState, loading: bool) -> Vec<Line<'stat
                 let status_color = if *success { Color::Green } else { Color::Red };
                 let toggle = if *collapsed { "▶" } else { "▼" };
                 let output_line_count = output.lines().count();
+                let cmd_display = command.clone();
 
                 lines.push(Line::from(vec![
                     Span::styled(
@@ -399,7 +419,7 @@ fn build_conversation_lines(state: &AgentState, loading: bool) -> Vec<Line<'stat
                     ),
                     Span::styled(format!("{} ", toggle), Style::default().fg(Color::DarkGray)),
                     Span::styled(
-                        format!("git {}", command),
+                        format!("git {}", cmd_display),
                         Style::default()
                             .fg(Color::Yellow)
                             .add_modifier(Modifier::BOLD),
@@ -516,29 +536,69 @@ fn build_conversation_lines(state: &AgentState, loading: bool) -> Vec<Line<'stat
         lines.push(Line::from(Span::raw("")));
     }
 
-    // Thinking indicator — Claude Code style with animated dots
+    // Tool result prompt — ask user to proceed, revise, or stop
+    if let Some(ref prompt) = state.tool_result_prompt {
+        let tool_name = prompt.tool_name.clone();
+        lines.push(Line::from(Span::raw("")));
+        lines.push(Line::from(vec![
+            Span::styled("  ✓ ", Style::default().fg(Color::Green)),
+            Span::styled(
+                tool_name,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        if !prompt.output_preview.is_empty() {
+            let preview = if prompt.output_preview.len() > 80 {
+                format!("{}…", &prompt.output_preview[..80])
+            } else {
+                prompt.output_preview.clone()
+            };
+            lines.push(Line::from(Span::styled(
+                format!("    {}", preview),
+                Style::default().fg(Color::DarkGray),
+            )));
+        }
+        lines.push(Line::from(vec![
+            Span::styled("  [Enter]", Style::default().fg(Color::Green)),
+            Span::raw(" Proceed  "),
+            Span::styled("[r]", Style::default().fg(Color::Yellow)),
+            Span::raw(" Revise plan  "),
+            Span::styled("[Esc]", Style::default().fg(Color::Red)),
+            Span::raw(" Stop"),
+        ]));
+        lines.push(Line::from(Span::raw("")));
+    }
+
+    // Thinking indicator — animated spinner (changes every 100ms)
     if loading && state.pending_command.is_none() && !state.command_executing {
-        let dots = match (SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-            / 500) as usize
-            % 4
-        {
-            0 => "",
-            1 => ".",
-            2 => "..",
-            3 => "...",
-            _ => "",
-        };
         lines.push(Line::from(vec![
             Span::styled(
-                "  ⏳ Thinking",
+                format!("  {} ", spinner_char()),
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                "Thinking...",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::DIM),
             ),
-            Span::styled(dots, Style::default().fg(Color::Yellow)),
+        ]));
+        lines.push(Line::from(Span::raw("")));
+    }
+
+    // Executing command indicator — animated spinner
+    if let Some(ref label) = state.executing_label {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {} ", spinner_char()),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(
+                format!("Running: {}", label),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
+            ),
         ]));
         lines.push(Line::from(Span::raw("")));
     }
@@ -604,6 +664,15 @@ fn render_input(f: &mut Frame, area: Rect, state: &AgentState) {
             Span::raw("Deny "),
             Span::styled("a ", Style::default().fg(Color::Cyan)),
             Span::raw("Always"),
+        ]
+    } else if state.tool_result_prompt.is_some() {
+        vec![
+            Span::styled(" Enter ", Style::default().fg(Color::Green)),
+            Span::raw("Proceed "),
+            Span::styled("r ", Style::default().fg(Color::Yellow)),
+            Span::raw("Revise "),
+            Span::styled("Esc ", Style::default().fg(Color::Red)),
+            Span::raw("Stop"),
         ]
     } else if state.input_active {
         vec![
@@ -680,6 +749,11 @@ pub fn handle_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()
         return handle_permission_key(app, key);
     }
 
+    // Handle tool result prompt (proceed/revise/stop)
+    if app.agent_state.tool_result_prompt.is_some() {
+        return handle_tool_result_key(app, key);
+    }
+
     // If input is active, handle text input
     if app.agent_state.input_active {
         return handle_input_key(app, key);
@@ -751,6 +825,36 @@ fn handle_permission_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Re
                 role: MessageRole::System,
                 content: "All pending commands cancelled.".to_string(),
             });
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_tool_result_key(app: &mut crate::app::App, key: KeyEvent) -> anyhow::Result<()> {
+    match key.code {
+        KeyCode::Enter => {
+            // Proceed to next tool
+            app.agent_state.tool_result_prompt = None;
+            app.process_agent_next_tool();
+        }
+        KeyCode::Char('r') => {
+            // Revise plan — stop agent loop, let user type a new instruction
+            app.agent_state.tool_result_prompt = None;
+            app.stop_agent();
+            app.agent_state.input_active = true;
+            app.agent_state.input.clear();
+            app.set_status("Revise your plan — type a new instruction");
+        }
+        KeyCode::Esc => {
+            // Stop agent loop
+            app.agent_state.tool_result_prompt = None;
+            app.stop_agent();
+            app.agent_state.messages.push(AgentMessage {
+                role: MessageRole::System,
+                content: "Agent stopped by user.".to_string(),
+            });
+            app.set_status("Agent stopped");
         }
         _ => {}
     }

@@ -44,6 +44,8 @@ pub struct MentorRequest {
 #[derive(Debug, Serialize, Clone)]
 pub struct RepoContext {
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub staged_files: Vec<String>,
@@ -420,6 +422,7 @@ impl AiClient {
             .as_ref()
             .cloned()
             .unwrap_or_else(|| RepoContext {
+                repo_path: None,
                 branch: None,
                 staged_files: vec![],
                 unstaged_files: vec![],
@@ -534,6 +537,7 @@ impl AiClient {
         };
 
         let context = RepoContext {
+            repo_path: None,
             branch,
             staged_files: vec![file_path.to_string()],
             unstaged_files: vec![],
@@ -604,6 +608,7 @@ impl AiClient {
         };
 
         let context = RepoContext {
+            repo_path: None,
             branch,
             staged_files: vec![],
             unstaged_files: vec![],
@@ -830,6 +835,7 @@ impl AiClient {
 
 /// Build repository context from the current git state.
 fn build_repo_context(include_diff: bool) -> Result<RepoContext> {
+    let repo_path = git::run_git(&["rev-parse", "--show-toplevel"]).ok();
     let branch = git::branch::BranchOps::current().ok();
     let detached_head = branch.as_deref() == Some("HEAD");
 
@@ -887,6 +893,7 @@ fn build_repo_context(include_diff: bool) -> Result<RepoContext> {
     }
 
     Ok(RepoContext {
+        repo_path,
         branch,
         staged_files,
         unstaged_files,
@@ -1001,6 +1008,25 @@ mod tests {
         let req = MentorRequest {
             request_type: "commit_suggestion".to_string(),
             context: Some(RepoContext {
+                repo_path: None,
+                branch: Some("main".to_string()),
+                staged_files: vec![],
+                unstaged_files: vec![],
+                diff_stats: None,
+                diff: None,
+                conflict_files: vec![],
+                conflict_diff: None,
+                has_conflicts: false,
+                merge_type: None,
+                detached_head: false,
+            }),
+            query: None,
+            error: None,
+        };
+        let r2 = MentorRequest {
+            request_type: "explain".to_string(),
+            context: Some(RepoContext {
+                repo_path: None,
                 branch: Some("main".to_string()),
                 staged_files: vec!["src/main.rs".to_string()],
                 unstaged_files: vec![],
