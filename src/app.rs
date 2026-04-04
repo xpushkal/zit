@@ -242,6 +242,12 @@ impl App {
         }
     }
 
+    /// Tick all animation timers. Call every frame tick.
+    pub fn tick_animations(&mut self) {
+        self.ai_mentor_state.tick_animations(self.ai_loading);
+        self.dashboard_state.tick_animations();
+    }
+
     /// Handle a key event. Returns Ok(()) or an error.
     pub fn handle_key(&mut self, key: KeyEvent) -> Result<()> {
         // Handle popup first

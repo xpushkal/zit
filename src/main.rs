@@ -195,6 +195,7 @@ fn run_app(
             AppEvent::Tick => {
                 app.poll_ai_result();
                 app.poll_agent_command();
+                app.tick_animations();
                 // Auto-refresh on tick for the current view
                 app.refresh();
                 // Poll GitHub Device Flow if active

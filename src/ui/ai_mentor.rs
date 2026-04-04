@@ -47,11 +47,13 @@ pub struct AiMentorState {
     pub history: Vec<AiHistoryEntry>,
     pub history_selected: usize,
     pub history_scroll: u16,
+    pub spinner_frame: u8,
+    pub typewriter_chars: usize,
+    pub typewriter_last_tick: std::time::Instant,
 }
 
 impl Default for AiMentorState {
     fn default() -> Self {
-        // Load persisted history
         let history = Self::load_history();
         Self {
             mode: AiMode::Menu,
@@ -63,11 +65,35 @@ impl Default for AiMentorState {
             history,
             history_selected: 0,
             history_scroll: 0,
+            spinner_frame: 0,
+            typewriter_chars: 0,
+            typewriter_last_tick: std::time::Instant::now(),
         }
     }
 }
 
 impl AiMentorState {
+    /// Tick all animation timers. Call every frame tick.
+    pub fn tick_animations(&mut self, ai_loading: bool) {
+        // Spinner: advance frame every ~80ms
+        self.spinner_frame = (self.spinner_frame + 1) % 8;
+
+        // Typewriter: advance ~3 chars per tick (tick_rate is typically 250ms)
+        if self.mode == AiMode::Result && ai_loading {
+            let now = std::time::Instant::now();
+            if now.duration_since(self.typewriter_last_tick).as_millis() >= 16 {
+                self.typewriter_chars = self.typewriter_chars.saturating_add(3);
+                self.typewriter_last_tick = now;
+            }
+        } else if self.mode == AiMode::Result && !ai_loading {
+            // Once loading is done, reveal all remaining chars
+            self.typewriter_chars = self.result_text.chars().count();
+        } else if self.mode != AiMode::Result {
+            // Reset typewriter when not in result mode
+            self.typewriter_chars = 0;
+        }
+    }
+
     /// Load history from disk. Returns empty vec on any error.
     fn load_history() -> Vec<AiHistoryEntry> {
         let path = history_path();

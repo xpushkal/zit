@@ -31,6 +31,14 @@ pub struct DashboardState {
     pub recent_commits: Vec<git::CommitEntry>,
     pub error: Option<String>,
     pub focus: DashboardFocus,
+    pub display_staged: usize,
+    pub display_unstaged: usize,
+    pub display_untracked: usize,
+    pub display_conflict: usize,
+    pub display_stash: u32,
+    pub display_commit: usize,
+    pub display_ahead: u32,
+    pub display_behind: u32,
 }
 
 impl Default for DashboardState {
@@ -50,6 +58,14 @@ impl Default for DashboardState {
             recent_commits: Vec::new(),
             error: None,
             focus: DashboardFocus::default(),
+            display_staged: 0,
+            display_unstaged: 0,
+            display_untracked: 0,
+            display_conflict: 0,
+            display_stash: 0,
+            display_commit: 0,
+            display_ahead: 0,
+            display_behind: 0,
         };
         state.refresh();
         state
@@ -82,7 +98,49 @@ impl DashboardState {
             Err(_) => self.recent_commits = Vec::new(),
         }
 
-        self.commit_count = git::log::commit_count().unwrap_or(0);
+        match git::log::get_log(1, 0, None) {
+            Ok(commits) => self.commit_count = commits.len(),
+            Err(_) => self.commit_count = 0,
+        }
+
+        self.display_staged = self.staged_count;
+        self.display_unstaged = self.unstaged_count;
+        self.display_untracked = self.untracked_count;
+        self.display_conflict = self.conflict_count;
+        self.display_stash = self.stash_count;
+        self.display_commit = self.commit_count;
+        self.display_ahead = self.ahead;
+        self.display_behind = self.behind;
+    }
+
+    pub fn tick_animations(&mut self) {
+        fn step_toward(current: usize, target: usize) -> usize {
+            if current < target {
+                current + 1
+            } else if current > target {
+                current - 1
+            } else {
+                current
+            }
+        }
+        fn step_toward_u32(current: u32, target: u32) -> u32 {
+            if current < target {
+                current + 1
+            } else if current > target {
+                current - 1
+            } else {
+                current
+            }
+        }
+
+        self.display_staged = step_toward(self.display_staged, self.staged_count);
+        self.display_unstaged = step_toward(self.display_unstaged, self.unstaged_count);
+        self.display_untracked = step_toward(self.display_untracked, self.untracked_count);
+        self.display_conflict = step_toward(self.display_conflict, self.conflict_count);
+        self.display_stash = step_toward_u32(self.display_stash, self.stash_count);
+        self.display_commit = step_toward(self.display_commit, self.commit_count);
+        self.display_ahead = step_toward_u32(self.display_ahead, self.ahead);
+        self.display_behind = step_toward_u32(self.display_behind, self.behind);
     }
 }
 
@@ -134,8 +192,14 @@ pub fn render(
     f.render_widget(title, top_panels[0]);
 
     // AI Mentor title bar
+    const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
+
     let ai_status = if ai_loading {
-        Span::styled(" ⏳ Loading... ", Style::default().fg(Color::Yellow))
+        let spinner = SPINNER_FRAMES[ai_mentor_state.spinner_frame as usize];
+        Span::styled(
+            format!(" {} Loading... ", spinner),
+            Style::default().fg(Color::Yellow),
+        )
     } else if ai_available {
         Span::styled(" ● Connected ", Style::default().fg(Color::Green))
     } else {
@@ -209,18 +273,18 @@ pub fn render(
         ),
     ];
 
-    if state.ahead > 0 || state.behind > 0 {
+    if state.display_ahead > 0 || state.display_behind > 0 {
         branch_spans.push(Span::raw("  "));
-        if state.ahead > 0 {
+        if state.display_ahead > 0 {
             branch_spans.push(Span::styled(
-                format!("⬆{}", state.ahead),
+                format!("⬆{}", state.display_ahead),
                 Style::default().fg(Color::Green),
             ));
             branch_spans.push(Span::raw(" "));
         }
-        if state.behind > 0 {
+        if state.display_behind > 0 {
             branch_spans.push(Span::styled(
-                format!("⬇{}", state.behind),
+                format!("⬇{}", state.display_behind),
                 Style::default().fg(Color::Red),
             ));
         }
@@ -236,10 +300,10 @@ pub fn render(
         Style::default().fg(status_color),
     ));
 
-    if state.conflict_count > 0 {
+    if state.display_conflict > 0 {
         branch_spans.push(Span::raw("  "));
         branch_spans.push(Span::styled(
-            format!("⚠ {} conflicts", state.conflict_count),
+            format!("⚠ {} conflicts", state.display_conflict),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ));
     }
@@ -255,37 +319,55 @@ pub fn render(
     );
     f.render_widget(branch_info, left_chunks[0]);
 
-    // File counts
+    // File counts (animated display values with gauge bars)
+    fn gauge_bar(value: usize, max: usize, color: Color) -> Span<'static> {
+        let bar_len = if max == 0 { 0 } else { (value * 5) / max };
+        let bar: String = (0..5)
+            .map(|i| if i < bar_len { '█' } else { '░' })
+            .collect();
+        Span::styled(bar, Style::default().fg(color))
+    }
+
     let counts = Paragraph::new(Line::from(vec![
         Span::styled("  Staged: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", state.staged_count),
+            format!("{}", state.display_staged),
             Style::default().fg(Color::Green),
         ),
+        Span::raw(" "),
+        gauge_bar(state.display_staged, 10, Color::Green),
         Span::raw("  │  "),
         Span::styled("Unstaged: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", state.unstaged_count),
+            format!("{}", state.display_unstaged),
             Style::default().fg(Color::Yellow),
         ),
+        Span::raw(" "),
+        gauge_bar(state.display_unstaged, 10, Color::Yellow),
         Span::raw("  │  "),
         Span::styled("Untracked: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", state.untracked_count),
+            format!("{}", state.display_untracked),
             Style::default().fg(Color::Gray),
         ),
+        Span::raw(" "),
+        gauge_bar(state.display_untracked, 10, Color::Gray),
         Span::raw("  │  "),
         Span::styled("Stash: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", state.stash_count),
+            format!("{}", state.display_stash),
             Style::default().fg(Color::Magenta),
         ),
+        Span::raw(" "),
+        gauge_bar(state.display_stash as usize, 10, Color::Magenta),
         Span::raw("  │  "),
         Span::styled("Commits: ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            format!("{}", state.commit_count),
+            format!("{}", state.display_commit),
             Style::default().fg(Color::Blue),
         ),
+        Span::raw(" "),
+        gauge_bar(state.display_commit, 50, Color::Blue),
     ]))
     .block(
         Block::default()
@@ -374,7 +456,13 @@ pub fn render(
             render_ai_input(f, ai_content_area, ai_mentor_state, ai_border_color);
         }
         crate::ui::ai_mentor::AiMode::Result => {
-            render_ai_result(f, ai_content_area, ai_mentor_state, ai_border_color);
+            render_ai_result(
+                f,
+                ai_content_area,
+                ai_mentor_state,
+                ai_border_color,
+                ai_loading,
+            );
         }
         crate::ui::ai_mentor::AiMode::History => {
             render_ai_history(f, ai_content_area, ai_mentor_state, ai_border_color);
@@ -545,13 +633,19 @@ fn render_ai_result(
     area: Rect,
     state: &crate::ui::ai_mentor::AiMentorState,
     border_color: Color,
+    ai_loading: bool,
 ) {
     use ratatui::widgets::Wrap;
 
     let title_text = state.last_action.as_deref().unwrap_or("AI Response");
 
-    let lines: Vec<Line> = state
-        .result_text
+    let visible_chars = state.typewriter_chars;
+    let total_chars = state.result_text.chars().count();
+    let is_typing = ai_loading && visible_chars < total_chars;
+
+    let visible_text: String = state.result_text.chars().take(visible_chars).collect();
+
+    let mut lines: Vec<Line> = visible_text
         .lines()
         .map(|l| {
             Line::from(Span::styled(
@@ -560,6 +654,24 @@ fn render_ai_result(
             ))
         })
         .collect();
+
+    if is_typing {
+        if let Some(last_line) = lines.last_mut() {
+            last_line.spans.push(Span::styled(
+                "▊",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            lines.push(Line::from(vec![Span::styled(
+                "  ▊",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]));
+        }
+    }
 
     let result = Paragraph::new(lines)
         .block(
