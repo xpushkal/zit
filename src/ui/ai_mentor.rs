@@ -159,23 +159,17 @@ impl AiMentorState {
 }
 
 pub const MENU_ITEMS: &[(&str, &str)] = &[
-    ("🔍 Explain Repo", "Explain the current repository state"),
-    ("💬 Ask a Question", "Ask the AI mentor anything about git"),
+    ("Explain Repo", "Analyze Repository Structure and State"),
+    ("Ask a Question", "Ask Anything About Git"),
+    ("Recommend", "Get Safe Recommendations For Git Operations"),
+    ("Learn", "Learn A Git Concept With Examples"),
     (
-        "🛡️ Recommend",
-        "Get a safe recommendation for a git operation",
+        "Generate .gitignore",
+        "ai-powered .gitignore from project structure",
     ),
-    ("📚 Learn", "Learn a git concept with examples"),
-    (
-        "📄 Generate .gitignore",
-        "AI-powered .gitignore based on project structure",
-    ),
-    ("🏥 Health Check", "Test connectivity to the AI service"),
-    ("📜 History", "View past AI interactions"),
-    (
-        "⚙️  Switch Provider",
-        "Change AI provider (OpenAI, Anthropic, Ollama...)",
-    ),
+    ("Health Check", "Test Connectivity To The AI Service"),
+    ("History", "View Past AI Interactions"),
+    ("Switch Provider", "Change AI Provider Or API Key"),
 ];
 
 #[allow(dead_code)]

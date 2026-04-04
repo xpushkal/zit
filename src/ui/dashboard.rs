@@ -157,20 +157,18 @@ pub fn render(
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Top bar (title + AI title on same row)
-            Constraint::Min(5),    // Main content area (dashboard content + AI panel)
-            Constraint::Length(3), // Keybindings
-            Constraint::Length(1), // Status bar
+            Constraint::Length(3),
+            Constraint::Min(5),
+            Constraint::Length(3),
+            Constraint::Length(1),
         ])
         .split(area);
 
-    // ── Top bar: split horizontally for dashboard title (left) and AI title (right) ──
     let top_panels = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(main_chunks[0]);
 
-    // Dashboard title
     let title = Paragraph::new(Line::from(vec![
         Span::styled(
             "⚡ zit",
@@ -191,7 +189,6 @@ pub fn render(
     );
     f.render_widget(title, top_panels[0]);
 
-    // AI Mentor title bar
     const SPINNER_FRAMES: &[char] = &['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
 
     let ai_status = if ai_loading {
@@ -239,23 +236,20 @@ pub fn render(
     );
     f.render_widget(ai_title, top_panels[1]);
 
-    // ── Main content area: split horizontally ──
     let content_panels = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(main_chunks[1]);
 
-    // ── Left panel: Dashboard content ──
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Branch info
-            Constraint::Length(3), // File counts
-            Constraint::Min(5),    // Recent commits
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Min(5),
         ])
         .split(content_panels[0]);
 
-    // Branch info
     let status_icon = if state.is_clean { "✓" } else { "✗" };
     let status_color = if state.is_clean {
         Color::Green
@@ -319,12 +313,14 @@ pub fn render(
     );
     f.render_widget(branch_info, left_chunks[0]);
 
-    // File counts (animated display values with gauge bars)
     fn gauge_bar(value: usize, max: usize, color: Color) -> Span<'static> {
-        let bar_len = if max == 0 { 0 } else { (value * 5) / max };
-        let bar: String = (0..5)
-            .map(|i| if i < bar_len { '█' } else { '░' })
-            .collect();
+        let filled = if value == 0 || max == 0 {
+            0
+        } else {
+            ((value as f32 / max as f32) * 6.0).ceil() as usize
+        };
+        let filled = filled.min(6);
+        let bar: String = (0..6).map(|i| if i < filled { '█' } else { '░' }).collect();
         Span::styled(bar, Style::default().fg(color))
     }
 
@@ -380,7 +376,6 @@ pub fn render(
     );
     f.render_widget(counts, left_chunks[1]);
 
-    // Recent commits
     let commit_items: Vec<ListItem> = state
         .recent_commits
         .iter()
@@ -434,7 +429,6 @@ pub fn render(
     );
     f.render_widget(commits, left_chunks[2]);
 
-    // ── Right panel: AI Mentor content ──
     let ai_content_area = content_panels[1];
     let ai_border_color = if state.focus == DashboardFocus::Right {
         Color::Magenta
@@ -469,39 +463,49 @@ pub fn render(
         }
     }
 
-    // ── Keybindings bar ──
-    let key_spans = vec![
-        Span::styled(" [s]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Stage "),
-        Span::styled("[c]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Commit "),
-        Span::styled("[b]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Branches "),
-        Span::styled("[l]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Log "),
-        Span::styled("[t]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Time Travel "),
-        Span::styled("[r]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Reflog "),
-        Span::styled("[g]", Style::default().fg(Color::Cyan)),
-        Span::raw(" GitHub "),
-        Span::styled("[a]", Style::default().fg(Color::Magenta)),
-        Span::raw(" AI Focus "),
-        Span::styled("[Tab]", Style::default().fg(Color::Yellow)),
-        Span::raw(" Switch Panel "),
-        Span::styled("[m]", Style::default().fg(Color::Red)),
-        Span::raw(" Merge "),
-        Span::styled("[w]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Workflow "),
-        Span::styled("[B]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Bisect "),
-        Span::styled("[p]", Style::default().fg(Color::Magenta)),
-        Span::raw(" Cherry Pick "),
-        Span::styled("[?]", Style::default().fg(Color::Cyan)),
-        Span::raw(" Help "),
-        Span::styled("[q]", Style::default().fg(Color::Red)),
-        Span::raw(" Quit"),
-    ];
+   let key_spans = vec![
+    // --- Navigation / View (Steel Blue)
+    Span::styled(" s ", Style::default().fg(Color::Black).bg(Color::Rgb(82, 175, 209))),
+    Span::raw(" Stage  "),
+    Span::styled(" c ", Style::default().fg(Color::Black).bg(Color::Rgb(82, 175, 209))),
+    Span::raw(" Commit  "),
+    Span::styled(" l ", Style::default().fg(Color::Black).bg(Color::Rgb(82, 175, 209))),
+    Span::raw(" Log  "),
+    Span::styled(" b ", Style::default().fg(Color::Black).bg(Color::Rgb(82, 175, 209))),
+    Span::raw(" Branches  "),
+
+    // --- Git Operations (Soft Purple)
+    Span::styled(" r ", Style::default().fg(Color::Black).bg(Color::Rgb(155, 114, 215))),
+    Span::raw(" Reflog  "),
+    Span::styled(" t ", Style::default().fg(Color::Black).bg(Color::Rgb(155, 114, 215))),
+    Span::raw(" Time Travel  "),
+    Span::styled(" B ", Style::default().fg(Color::Black).bg(Color::Rgb(155, 114, 215))),
+    Span::raw(" Bisect  "),
+
+    // --- Merge / Conflict (Amber)
+    Span::styled(" m ", Style::default().fg(Color::Black).bg(Color::Rgb(220, 160, 50))),
+    Span::raw(" Merge  "),
+    Span::styled(" p ", Style::default().fg(Color::Black).bg(Color::Rgb(220, 160, 50))),
+    Span::raw(" Cherry Pick  "),
+
+    // --- Remote / External (Teal Green)
+    Span::styled(" g ", Style::default().fg(Color::Black).bg(Color::Rgb(50, 190, 140))),
+    Span::raw(" GitHub  "),
+    Span::styled(" w ", Style::default().fg(Color::Black).bg(Color::Rgb(50, 190, 140))),
+    Span::raw(" Workflow  "),
+
+    // --- AI (Hot Magenta — distinct, premium feel)
+    Span::styled(" a ", Style::default().fg(Color::Black).bg(Color::Rgb(220, 80, 200))),
+    Span::raw(" AI  "),
+
+    // --- Meta / System (Cool Gray)
+    Span::styled(" ? ", Style::default().fg(Color::White).bg(Color::Rgb(80, 85, 100))),
+    Span::raw(" Help  "),
+
+    // --- Destructive (Deep Red)
+    Span::styled(" q ", Style::default().fg(Color::White).bg(Color::Rgb(190, 50, 60))),
+    Span::raw(" Quit"),
+];
 
     let keys = Paragraph::new(Line::from(key_spans)).block(
         Block::default()
@@ -510,7 +514,6 @@ pub fn render(
     );
     f.render_widget(keys, main_chunks[2]);
 
-    // ── Status bar ──
     if let Some(msg) = status_msg {
         let status = Paragraph::new(Span::styled(
             format!(" {}", msg),
