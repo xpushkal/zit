@@ -71,15 +71,14 @@ const cardVariants = {
   }),
 };
 
-export default function Pricing() {
+export default function Pricing({ hideHeader = false }: { hideHeader?: boolean }) {
   return (
-    <section id="pricing" className="relative py-32 overflow-hidden">
+    <section id="pricing" className="relative py-24 overflow-hidden">
       {/* Background glows */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 rounded-full bg-violet-600/10 blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-80 h-80 rounded-full bg-indigo-500/10 blur-[100px]" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] rounded-full bg-purple-900/8 blur-[80px]" />
-        {/* Subtle noise overlay */}
         <div
           className="absolute inset-0 opacity-[0.025]"
           style={{
@@ -89,44 +88,36 @@ export default function Pricing() {
           }}
         />
       </div>
-
-      {/* Top separator */}
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-500/25 to-transparent" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-6">
-        {/* Section header */}
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border border-violet-500/20 bg-violet-500/5 text-violet-400 text-xs font-semibold tracking-widest uppercase">
-            Simple Pricing
-          </div>
-          <h2 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-tight mb-5">
-            Start free.{" "}
-            <span
-              style={{
-                background: "linear-gradient(135deg, #8b5cf6, #6366f1, #818cf8)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-              }}
-            >
-              Scale fast.
-            </span>
-          </h2>
-          <p className="text-white/40 text-lg max-w-2xl mx-auto leading-relaxed">
-            No hidden fees. No vendor lock-in. Cancel anytime.
-            <br className="hidden sm:block" />
-            Built for developers, priced for humans.
-          </p>
-        </motion.div>
+        {!hideHeader && (
+          <motion.div
+            className="text-center mb-20"
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+          >
+            <div className="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border border-violet-500/20 bg-violet-500/5 text-violet-400 text-xs font-semibold tracking-widest uppercase">
+              Simple Pricing
+            </div>
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight leading-tight mb-6">
+              Start free.{" "}
+              <span style={{ background: "linear-gradient(135deg, #8b5cf6, #6366f1, #818cf8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>
+                Scale fast.
+              </span>
+            </h2>
+            <p className="text-white/40 text-lg max-w-2xl mx-auto leading-relaxed">
+              No hidden fees. No vendor lock-in. Cancel anytime.
+              <br className="hidden sm:block" />
+              Built for developers, priced for humans.
+            </p>
+          </motion.div>
+        )}
 
         {/* Cards grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+        <div className={`grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch max-w-5xl mx-auto ${hideHeader ? 'mt-12 md:mt-16' : ''}`}>
           {plans.map((plan, i) => {
             const Icon = plan.icon;
             return (
@@ -316,7 +307,7 @@ export default function Pricing() {
 
         {/* Bottom footnote */}
         <motion.p
-          className="text-center text-white/20 text-xs mt-12 font-mono"
+          className="text-center text-white/20 text-xs mt-16 font-mono"
           initial={{ opacity: 0 }}
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}

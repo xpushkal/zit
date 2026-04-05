@@ -61,10 +61,10 @@ export default function Keybindings() {
   const active = bindings.find((b) => b.key === hovered);
 
   return (
-    <section id="keybindings" className="py-32 relative overflow-hidden">
+    <section id="keybindings" className="py-24 relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-6">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-20">
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -78,7 +78,7 @@ export default function Keybindings() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-5xl font-black tracking-tight mb-5"
+            className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight mb-6"
           >
             Keyboard-first.{" "}
             <span className="text-white/25">Always.</span>
@@ -100,7 +100,7 @@ export default function Keybindings() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="flex flex-wrap justify-center gap-3 mb-10"
+          className="flex flex-wrap justify-center gap-3 mb-12"
         >
           {bindings.map((b, i) => (
             <motion.div

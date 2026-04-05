@@ -43,7 +43,7 @@ export default function AiFeatures() {
   const [active, setActive] = useState(capabilities[0]);
 
   return (
-    <section id="ai-mentor" className="py-32 relative overflow-hidden">
+    <section id="ai-mentor" className="py-24 relative overflow-hidden">
       {/* Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-violet-500/6 blur-[120px] rounded-full pointer-events-none" />
 
@@ -64,7 +64,7 @@ export default function AiFeatures() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: 0.1 }}
-              className="text-4xl md:text-5xl font-black tracking-tight mb-5 leading-[1.05]"
+              className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight mb-6 leading-[1.05]"
             >
               Git with a{" "}
               <span className="text-purple">teacher
@@ -76,7 +76,7 @@ export default function AiFeatures() {
               whileInView={{ opacity: 1 }}
               viewport={{ once: true }}
               transition={{ delay: 0.2 }}
-              className="text-white/40 text-base leading-relaxed mb-10 max-w-sm"
+              className="text-white/40 text-base leading-relaxed mb-16 max-w-lg"
             >
               Powered by Amazon Bedrock (Claude 3 Sonnet). The AI mentor explains errors
               automatically, answers questions, and generates commit messages — all without leaving your terminal.
