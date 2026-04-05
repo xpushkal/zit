@@ -15,7 +15,7 @@ export default function ComparePage() {
     <main className="min-h-screen relative bg-[var(--background)] text-[var(--foreground)] overflow-x-hidden">
       <Navbar />
       <CompareHero />
-      <WhyZitWins />
+      <WhyZitWins hideHeader />
       <Footer />
     </main>
   );

@@ -28,12 +28,12 @@ export default function Installation() {
   };
 
   return (
-    <section id="installation" className="py-16 relative">
+    <section id="installation" className="py-24 relative">
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[500px] h-[200px] bg-orange-500/5 blur-[100px] rounded-full pointer-events-none" />
 
       <div className="max-w-4xl mx-auto px-6 relative z-10">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-20">
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -47,7 +47,7 @@ export default function Installation() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-5xl font-black tracking-tight mb-5"
+            className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight mb-6"
           >
             Up and running{" "}
             <span className="text-orange">in 30 seconds.</span>
@@ -57,7 +57,7 @@ export default function Installation() {
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
-            className="text-white/40 text-lg"
+            className="text-white/40 text-lg max-w-xl mx-auto"
           >
             No configuration required. Works on macOS, Linux, and Windows.
           </motion.p>

@@ -81,10 +81,10 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="py-16 relative">
+    <section id="features" className="py-24 relative">
       <div className="max-w-6xl mx-auto px-6">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-20">
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}
@@ -98,7 +98,7 @@ export default function Features() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
-            className="text-4xl md:text-5xl font-black tracking-tight mb-5"
+            className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight mb-6"
           >
             Everything you need.{" "}
             <span className="text-white/25">Nothing you don't.</span>
@@ -108,14 +108,14 @@ export default function Features() {
             whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
-            className="text-white/40 text-lg max-w-xl mx-auto"
+            className="text-white/40 text-lg max-w-2xl mx-auto leading-relaxed"
           >
             14 Git features. One binary. Zero GUI bloat.
           </motion.p>
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((f, i) => {
             const Icon = f.icon;
             return (
@@ -127,7 +127,7 @@ export default function Features() {
                 transition={{ delay: i * 0.07 }}
                 className={`group relative p-6 rounded-2xl glass border border-white/5 transition-all duration-300 cursor-default ${f.glow} ${f.border} hover:-translate-y-1`}
               >
-                <div className={`${f.color} mb-4 opacity-80 group-hover:opacity-100 transition-opacity`}>
+                <div className={`${f.color} mb-5 opacity-80 group-hover:opacity-100 transition-opacity`}>
                   <Icon size={22} />
                 </div>
                 <h3 className="text-white font-bold text-sm mb-2">{f.title}</h3>
@@ -143,12 +143,12 @@ export default function Features() {
           whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
           transition={{ delay: 0.4 }}
-          className="mt-6 flex flex-wrap items-center justify-center gap-3"
+          className="mt-12 flex flex-wrap items-center justify-center gap-3"
         >
           {["Commit Timeline", "Git Bisect", "Cherry Pick", "Workflow Builder", "Reflog Recovery"].map((tag) => (
             <span
               key={tag}
-              className="px-3 py-1.5 rounded-full text-xs text-white/30 border border-white/5 glass font-mono"
+              className="px-4 py-2 rounded-full text-xs text-white/30 border border-white/5 glass font-mono"
             >
               + {tag}
             </span>

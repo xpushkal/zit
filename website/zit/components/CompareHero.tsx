@@ -6,7 +6,7 @@ import { ArrowLeft } from "lucide-react";
 
 export default function CompareHero() {
   return (
-    <section className="relative pt-32 pb-0 overflow-hidden">
+    <section className="relative pt-32 pb-16 overflow-hidden">
       {/* Ambient glow */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-indigo-600/10 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-indigo-500/20 to-transparent" />
@@ -29,7 +29,7 @@ export default function CompareHero() {
             Competitive Edge
           </div>
 
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-tight mb-5">
+          <h1 className="text-5xl md:text-6xl lg:text-7xl font-black tracking-tight leading-tight mb-6">
             Why{" "}
             <span
               style={{

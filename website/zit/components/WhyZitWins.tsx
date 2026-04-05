@@ -144,7 +144,7 @@ export default function WhyZitWins({ hideHeader = false }: { hideHeader?: boolea
   const tableRef = useRef<HTMLDivElement>(null);
 
   return (
-    <section id="why-zit" className="relative py-16 overflow-hidden">
+    <section id="why-zit" className="relative py-24 overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-violet-500/20 to-transparent" />
@@ -156,7 +156,7 @@ export default function WhyZitWins({ hideHeader = false }: { hideHeader?: boolea
         {/* Header — suppressed on the dedicated /compare page */}
         {!hideHeader && (
           <motion.div
-            className="text-center mb-14"
+            className="text-center mb-20"
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -186,7 +186,7 @@ export default function WhyZitWins({ hideHeader = false }: { hideHeader?: boolea
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.7, delay: 0.1 }}
-          className="overflow-x-auto rounded-2xl"
+          className={`overflow-x-auto rounded-2xl ${hideHeader ? 'mt-12 md:mt-16' : ''}`}
           style={{
             background: "rgba(255,255,255,0.02)",
             border: "1px solid rgba(255,255,255,0.07)",

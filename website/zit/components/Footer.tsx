@@ -57,7 +57,7 @@ const COLS = [
 export default function Footer() {
   return (
     <footer className="border-t border-white/[0.06] bg-[#060606]">
-      <div className="max-w-6xl mx-auto px-6 pt-14 pb-8">
+      <div className="max-w-6xl mx-auto px-6 pt-20 pb-10">
         {/* Top row */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-10 mb-12">
           {/* Brand column */}

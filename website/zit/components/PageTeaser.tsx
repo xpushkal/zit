@@ -45,12 +45,12 @@ const CARDS = [
 
 export default function PageTeaser() {
   return (
-    <section className="relative pt-0 pb-16 overflow-hidden">
+    <section className="relative pt-0 pb-24 overflow-hidden">
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/5 to-transparent" />
 
       <div className="relative z-10 max-w-6xl mx-auto px-6">
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 gap-5"
+          className="grid grid-cols-1 md:grid-cols-2 gap-8"
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
