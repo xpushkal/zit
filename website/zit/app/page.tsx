@@ -4,8 +4,8 @@ import Features from "@/components/Features";
 import AiFeatures from "@/components/AiFeatures";
 import Installation from "@/components/Installation";
 import Keybindings from "@/components/Keybindings";
+import PageTeaser from "@/components/PageTeaser";
 import Cta from "@/components/Cta";
-import Pricing from "@/components/Pricing";
 import Footer from "@/components/Footer";
 
 export default function Home() {
@@ -17,7 +17,7 @@ export default function Home() {
       <AiFeatures />
       <Installation />
       <Keybindings />
-      <Pricing />
+      <PageTeaser />
       <Cta />
       <Footer />
     </main>

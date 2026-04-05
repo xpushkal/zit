@@ -61,10 +61,10 @@ export default function Keybindings() {
   const active = bindings.find((b) => b.key === hovered);
 
   return (
-    <section id="keybindings" className="py-32 relative overflow-hidden">
+    <section id="keybindings" className="py-16 relative overflow-hidden">
       <div className="max-w-4xl mx-auto px-6">
         {/* Header */}
-        <div className="text-center mb-16">
+        <div className="text-center mb-12">
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}

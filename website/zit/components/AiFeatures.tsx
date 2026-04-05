@@ -43,7 +43,7 @@ export default function AiFeatures() {
   const [active, setActive] = useState(capabilities[0]);
 
   return (
-    <section id="ai-mentor" className="py-32 relative overflow-hidden">
+    <section id="ai-mentor" className="py-16 relative overflow-hidden">
       {/* Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-violet-500/6 blur-[120px] rounded-full pointer-events-none" />
 

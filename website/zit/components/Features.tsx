@@ -81,10 +81,10 @@ const features = [
 
 export default function Features() {
   return (
-    <section id="features" className="py-32 relative">
+    <section id="features" className="py-16 relative">
       <div className="max-w-6xl mx-auto px-6">
         {/* Header */}
-        <div className="text-center mb-20">
+        <div className="text-center mb-16">
           <motion.p
             initial={{ opacity: 0 }}
             whileInView={{ opacity: 1 }}

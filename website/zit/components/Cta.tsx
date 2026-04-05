@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export default function Cta() {
   return (
-    <section className="py-32 relative overflow-hidden">
+    <section className="py-16 relative overflow-hidden">
       {/* Big center glow */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_70%_60%_at_50%_50%,rgba(249,115,22,0.09),transparent)] pointer-events-none" />
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-orange-500/20 to-transparent" />
@@ -29,9 +29,9 @@ export default function Cta() {
           </h2>
 
           <p className="text-white/40 text-lg md:text-xl max-w-xl mx-auto mb-12 leading-relaxed">
-            14 features. AI mentorship. Beautiful TUI.
+            Join thousands of developers shipping faster and breaking less.
             <br />
-            One Rust binary.
+            Free, open-source, and strictly terminal-native.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

@@ -28,7 +28,7 @@ export default function Installation() {
   };
 
   return (
-    <section id="installation" className="py-32 relative">
+    <section id="installation" className="py-16 relative">
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[500px] h-[200px] bg-orange-500/5 blur-[100px] rounded-full pointer-events-none" />
 
       <div className="max-w-4xl mx-auto px-6 relative z-10">

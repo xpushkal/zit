@@ -36,7 +36,7 @@ export default function Hero() {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-orange-500/8 blur-[120px] rounded-full pointer-events-none" />
       <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] bg-violet-500/6 blur-[100px] rounded-full pointer-events-none" />
 
-      <div className="relative z-10 max-w-5xl mx-auto px-6 text-center pt-24 pb-20">
+      <div className="relative z-10 max-w-5xl mx-auto px-6 text-center pt-24 pb-16">
         {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
