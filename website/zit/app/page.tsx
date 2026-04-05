@@ -5,6 +5,7 @@ import AiFeatures from "@/components/AiFeatures";
 import Installation from "@/components/Installation";
 import Keybindings from "@/components/Keybindings";
 import Cta from "@/components/Cta";
+import Pricing from "@/components/Pricing";
 import Footer from "@/components/Footer";
 
 export default function Home() {
@@ -16,6 +17,7 @@ export default function Home() {
       <AiFeatures />
       <Installation />
       <Keybindings />
+      <Pricing />
       <Cta />
       <Footer />
     </main>
